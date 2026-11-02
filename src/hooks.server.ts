@@ -1,3 +1,8 @@
+import { unwatchAllProjects } from '$lib/server/watcher';
+import { building } from '$app/environment';
+import { startBackups } from '$lib/server/backups';
+import { StorageError } from '$lib/server/storage';
+import { lte } from 'drizzle-orm';
 import db, { dbPath } from '$lib/server/db';
 import { sessions, users } from '$lib/server/schema';
 import { eq } from 'drizzle-orm';
@@ -6,6 +11,7 @@ import { migrate } from '$lib/server/migrate';
 import { seed } from '$lib/server/seed';
 import { purgeExpiredTrashItems } from '$lib/server/trash';
 import { getDataDir } from '$lib/server/paths';
+import { redirect } from '@sveltejs/kit';
 import type { Handle, HandleServerError } from '@sveltejs/kit';
 
 const drizzleDb = drizzle(db);
@@ -13,9 +19,29 @@ const drizzleDb = drizzle(db);
 // Run migrations, seed, and purge expired trash on startup. A startup failure is
 // fatal — crash loudly so the container logs show it instead of serving 500s.
 try {
-  migrate();
-  await seed();
-  purgeExpiredTrashItems();
+  if (!building) migrate();
+  if (!building) await seed();
+  if (!building) {
+    purgeExpiredTrashItems();
+    const purgeSessions = () =>
+      drizzleDb
+        .delete(sessions)
+        .where(lte(sessions.expiresAt, Math.floor(Date.now() / 1000)))
+        .run();
+    purgeSessions();
+    const sessionPurge = setInterval(purgeSessions, 86400000);
+    sessionPurge.unref();
+    const backupScheduler = startBackups();
+    process.once('sveltekit:shutdown', () => {
+      clearInterval(sessionPurge);
+      clearInterval(backupScheduler);
+      void unwatchAllProjects();
+    });
+    if (!process.env.ORIGIN && !process.env.PROTOCOL_HEADER)
+      console.warn(
+        'Set ORIGIN to your public URL (for example http://localhost:3000) so login forms pass the origin check.'
+      );
+  }
   console.log(
     `[${new Date().toISOString()}] DreamForge startup complete (database=${dbPath}, dataDir=${getDataDir()})`
   );
@@ -52,6 +78,11 @@ export const handle: Handle = async ({ event, resolve }) => {
     event.locals.session = null;
   }
 
+  if (
+    event.locals.user?.mustChangePassword &&
+    !['/account', '/logout', '/healthz'].includes(event.url.pathname)
+  )
+    redirect(303, '/account');
   const response = await resolve(event);
 
   // SvelteKit only reports unexpected exceptions to handleError — expected
@@ -67,4 +98,5 @@ export const handleError: HandleServerError = async ({ error, event, status }) =
   console.error(`${requestLabel(event, status)} — unhandled error`);
   const err = error as Error | undefined;
   console.error(err?.stack ?? err);
+  if (error instanceof StorageError) return { message: error.message };
 };

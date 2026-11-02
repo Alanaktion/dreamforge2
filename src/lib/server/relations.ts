@@ -1,4 +1,4 @@
-import fs from 'node:fs';
+import { readJson, writeJson } from './storage';
 import path from 'node:path';
 import { generateId } from '$lib/utils';
 
@@ -15,15 +15,11 @@ function getRelationsPath(projectPath: string): string {
 }
 
 export function loadRelations(projectPath: string): RelationEntry[] {
-  try {
-    return JSON.parse(fs.readFileSync(getRelationsPath(projectPath), 'utf-8'));
-  } catch {
-    return [];
-  }
+  return readJson(getRelationsPath(projectPath), [], Array.isArray);
 }
 
 export function saveRelations(projectPath: string, relations: RelationEntry[]): void {
-  fs.writeFileSync(getRelationsPath(projectPath), JSON.stringify(relations, null, 2));
+  writeJson(getRelationsPath(projectPath), relations);
 }
 
 export function addRelation(projectPath: string, data: Omit<RelationEntry, 'id'>): RelationEntry {

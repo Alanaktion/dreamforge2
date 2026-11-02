@@ -1,7 +1,7 @@
 <script lang="ts">
   import { page } from '$app/state';
-  import { enhance } from '$app/forms';
-  import { invalidateAll } from '$app/navigation';
+  import { enhance, deserialize } from '$app/forms';
+  import { invalidateAll, beforeNavigate, goto } from '$app/navigation';
   import {
     ArrowLeft,
     Plus,
@@ -47,6 +47,7 @@
   };
 
   interface SceneRow {
+    revision?: string;
     id: string;
     title: string | null;
     status: SceneStatus;
@@ -108,6 +109,8 @@
   let savedSnapshot = $state('');
   let saving = $state(false);
   let saveError = $state('');
+  let revision = $state('');
+  let conflict = $state(false);
   let lastSavedAt = $state<Date | null>(null);
   let sessionStartWords = $state<number | null>(null);
 
@@ -191,6 +194,8 @@
 
   function loadScene(scene: SceneRow, chapterId: string) {
     activeSceneId = scene.id;
+    revision = scene.revision ?? '';
+    conflict = false;
     activeChapterId = chapterId;
     sceneTitle = scene.title || '';
     sceneStatus = scene.status || 'draft';
@@ -208,12 +213,12 @@
   /** Never switch away from unsaved edits — flush them first. */
   async function openScene(scene: SceneRow, chapterId: string) {
     if (scene.id === activeSceneId) return;
-    if (dirty) await saveScene();
+    if (dirty && !(await saveScene())) return;
     loadScene(scene, chapterId);
   }
 
   async function closeScene() {
-    if (dirty) await saveScene();
+    if (dirty && !(await saveScene())) return;
     zen.backgroundImage = null;
     if (zen.active) zen.active = false;
     activeSceneId = null;
@@ -229,8 +234,8 @@
     savedSnapshot = '';
   }
 
-  async function saveScene(): Promise<boolean> {
-    if (!activeSceneId || !canEdit || saving) return false;
+  async function saveScene(overwrite = false): Promise<boolean> {
+    if (!activeSceneId || !canEdit || saving || (conflict && !overwrite)) return false;
 
     const sceneId = activeSceneId;
     const chapterId = activeChapterId;
@@ -242,12 +247,25 @@
 
     try {
       const form = new FormData();
+      form.set('revision', revision);
+      if (overwrite) form.set('overwrite', 'true');
       form.set('chapterId', chapterId);
       form.set('sceneId', sceneId);
       for (const [key, value] of Object.entries(values)) form.set(key, value);
 
       const res = await fetch('?/updateScene', { method: 'POST', body: form });
-      if (!res.ok) throw new Error(`Save failed (${res.status})`);
+      const result = deserialize(await res.text());
+      if (result.type !== 'success') {
+        conflict = result.type === 'failure' && result.status === 409;
+        throw new Error(
+          conflict
+            ? 'This changed elsewhere. Reload latest or overwrite with your edits.'
+            : 'Save failed'
+        );
+      }
+      revision = (result.data as { revision?: string })?.revision ?? revision;
+      conflict = false;
+      saveError = (result.data as { warning?: string })?.warning ?? '';
 
       savedSnapshot = snapshot;
       lastSavedAt = new Date();
@@ -263,6 +281,7 @@
                   ? s
                   : {
                       ...s,
+                      revision,
                       title: values.title || null,
                       status: values.status,
                       narrator: values.narrator || null,
@@ -290,9 +309,19 @@
   // Debounced autosave: the cleanup cancels the pending timer on every keystroke,
   // so the write only happens once typing pauses.
   $effect(() => {
-    if (!dirty || !canEdit || saving) return;
+    if (!dirty || !canEdit || saving || conflict) return;
     const timer = setTimeout(() => void saveScene(), AUTOSAVE_DELAY);
     return () => clearTimeout(timer);
+  });
+
+  beforeNavigate((navigation) => {
+    if (!canEdit || !dirty) return;
+    navigation.cancel();
+    if (navigation.willUnload) return;
+    const target = navigation.to?.url;
+    void saveScene().then((saved) => {
+      if (saved && target) void goto(target);
+    });
   });
 
   function handleKeydown(e: KeyboardEvent) {
@@ -776,6 +805,18 @@
               {#if saveError}
                 <CloudOff class="h-3 w-3" />
                 {saveError}
+                {#if conflict}
+                  <button type="button" onclick={() => window.location.reload()}
+                    >Reload latest</button
+                  >
+                  <button
+                    type="button"
+                    onclick={() => {
+                      if (window.confirm('Overwrite the changes made elsewhere?'))
+                        void saveScene(true);
+                    }}>Overwrite with my edits</button
+                  >
+                {/if}
               {:else if saving}
                 <Loader2 class="h-3 w-3 animate-spin" />
                 Saving…

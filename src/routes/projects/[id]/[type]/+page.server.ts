@@ -1,8 +1,8 @@
+import { ConflictError } from '$lib/server/storage';
 import { fail, redirect } from '@sveltejs/kit';
 import { listEntities, createEntity, searchEntities, updateEntity } from '$lib/server/entities';
 import { softDeleteEntity, restoreEntity } from '$lib/server/trash';
 import { routeToEntityType } from '$lib/utils/entityTypes';
-import { watchProject, scanProject } from '$lib/server/watcher';
 import { getNoteTemplates } from '$lib/server/templates';
 import { getCustomFieldDefs } from '$lib/server/customFields';
 import { mergeFields, ENTITY_FIELDS } from '$lib/entityFields';
@@ -19,9 +19,6 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
   const access = getProjectAccess(params.id, locals.user.id);
   if (!access) throw redirect(302, '/projects');
   const { project, role } = access;
-
-  scanProject(params.id, project.dataPath);
-  watchProject(params.id, project.dataPath);
 
   const query = url.searchParams.get('q') || '';
   const status = url.searchParams.get('status') || '';
@@ -209,9 +206,21 @@ export const actions = {
       }
     }
 
-    updateEntity(params.id, project.dataPath, entityType, entityId, { [field]: parsed });
-
-    return { success: true };
+    try {
+      const updated = updateEntity(
+        params.id,
+        project.dataPath,
+        entityType,
+        entityId,
+        { [field]: parsed },
+        String(form.get('revision') ?? '')
+      );
+      if (!updated) return fail(404, { error: 'Entity not found' });
+      return { success: true, revision: updated.revision };
+    } catch (cause) {
+      if (cause instanceof ConflictError) return fail(409, { error: cause.message });
+      throw cause;
+    }
   },
 
   delete: async ({ params, locals, request }) => {

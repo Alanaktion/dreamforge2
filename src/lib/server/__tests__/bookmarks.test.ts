@@ -1,4 +1,7 @@
-import { describe, it, expect, beforeAll } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 
 const { testDb } = vi.hoisted(() => {
   const Database = require('better-sqlite3');
@@ -14,6 +17,9 @@ import { migrate } from '../migrate';
 import { getBookmarks, addBookmark, removeBookmark, isBookmarked } from '../bookmarks';
 import { generateId } from '$lib/utils';
 
+const testRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'df-metadata-'));
+afterAll(() => fs.rmSync(testRoot, { recursive: true, force: true }));
+
 function seedUserAndProject(): { userId: string; projectId: string } {
   const userId = generateId();
   const projectId = generateId();
@@ -22,7 +28,7 @@ function seedUserAndProject(): { userId: string; projectId: string } {
     `INSERT INTO users (id, email, username, password_hash, created_at) VALUES ('${userId}', '${userId}@test.com', '${username}', 'hash', '2024-01-01')`
   );
   testDb.exec(
-    `INSERT INTO projects (id, user_id, name, description, data_path, pinned, created_at, modified_at) VALUES ('${projectId}', '${userId}', 'Test', null, '/tmp/test', 0, '2024-01-01', '2024-01-01')`
+    `INSERT INTO projects (id, user_id, name, description, data_path, pinned, created_at, modified_at) VALUES ('${projectId}', '${userId}', 'Test', null, '${path.join(testRoot, projectId)}', 0, '2024-01-01', '2024-01-01')`
   );
   return { userId, projectId };
 }

@@ -1,3 +1,4 @@
+import { writeFileAtomic } from './storage';
 import fs from 'node:fs';
 import path from 'node:path';
 import { generateId, isSafePathSegment } from '$lib/utils';
@@ -64,7 +65,7 @@ function backfillBeatIds(projectPath: string, plotline: Plotline): Plotline {
 
   const filePath = getPlotlinePath(projectPath, plotline.id);
   const updated = { ...plotline, beats };
-  fs.writeFileSync(filePath, JSON.stringify(updated, null, 2));
+  writeFileAtomic(filePath, JSON.stringify(updated, null, 2));
   return updated;
 }
 
@@ -108,7 +109,7 @@ export function createPlotline(
 
   const dir = getPlotlinesDir(projectPath);
   fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(getPlotlinePath(projectPath, id), JSON.stringify(plotline, null, 2));
+  writeFileAtomic(getPlotlinePath(projectPath, id), JSON.stringify(plotline, null, 2));
 
   return plotline;
 }
@@ -127,7 +128,7 @@ export function updatePlotline(
     modifiedAt: new Date().toISOString()
   };
 
-  fs.writeFileSync(getPlotlinePath(projectPath, plotlineId), JSON.stringify(updated, null, 2));
+  writeFileAtomic(getPlotlinePath(projectPath, plotlineId), JSON.stringify(updated, null, 2));
   return updated;
 }
 

@@ -2,7 +2,7 @@ import { fail, redirect } from '@sveltejs/kit';
 import { hash } from '$lib/server/password';
 import db from '$lib/server/db';
 import { users, sessions } from '$lib/server/schema';
-import { eq, or } from 'drizzle-orm';
+import { eq, or, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { generateId } from '$lib/utils';
 import { registrationAllowed } from '$lib/server/registration';
@@ -22,7 +22,9 @@ export const actions = {
     }
 
     const form = await request.formData();
-    const email = form.get('email') as string;
+    const email = String(form.get('email') || '')
+      .trim()
+      .toLowerCase();
     const username = form.get('username') as string;
     const password = form.get('password') as string;
 
@@ -37,7 +39,7 @@ export const actions = {
     const existing = drizzleDb
       .select()
       .from(users)
-      .where(or(eq(users.email, email), eq(users.username, username)))
+      .where(or(sql`lower(${users.email}) = ${email}`, eq(users.username, username)))
       .get();
 
     if (existing) {

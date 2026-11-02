@@ -1,3 +1,7 @@
+import { restoreProject } from '$lib/server/backups';
+import { randomUUID } from 'node:crypto';
+import os from 'node:os';
+import { writeFileAtomic } from '$lib/server/storage';
 import { fail, redirect } from '@sveltejs/kit';
 import db from '$lib/server/db';
 import { projects } from '$lib/server/schema';
@@ -36,6 +40,23 @@ export const load: PageServerLoad = async ({ locals }) => {
 };
 
 export const actions = {
+  import: async ({ request, locals }) => {
+    if (!locals.user) return fail(401, { error: 'Unauthorized' });
+    const form = await request.formData();
+    const file = form.get('archive');
+    if (!(file instanceof File) || file.size > 20 * 1024 * 1024)
+      return fail(400, { error: 'Choose a ZIP file up to 20 MB' });
+    const temporary = path.join(os.tmpdir(), `dreamforge-${randomUUID()}.zip`);
+    try {
+      writeFileAtomic(temporary, Buffer.from(await file.arrayBuffer()));
+      const projectId = await restoreProject(temporary, locals.user.id);
+      return { success: true, projectId };
+    } catch (cause) {
+      return fail(400, { error: cause instanceof Error ? cause.message : 'Restore failed' });
+    } finally {
+      fs.rmSync(temporary, { force: true });
+    }
+  },
   create: async ({ request, locals }) => {
     if (!locals.user) return fail(401, { error: 'Unauthorized' });
 
@@ -61,7 +82,7 @@ export const actions = {
     fs.mkdirSync(path.join(dataPath, 'images'), { recursive: true });
     fs.mkdirSync(path.join(dataPath, 'templates'), { recursive: true });
 
-    fs.writeFileSync(
+    writeFileAtomic(
       path.join(dataPath, 'project.json'),
       JSON.stringify(
         {
@@ -76,7 +97,7 @@ export const actions = {
       )
     );
 
-    fs.writeFileSync(path.join(dataPath, 'relations.json'), JSON.stringify([], null, 2));
+    writeFileAtomic(path.join(dataPath, 'relations.json'), JSON.stringify([], null, 2));
 
     drizzleDb
       .insert(projects)

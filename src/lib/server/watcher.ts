@@ -1,3 +1,5 @@
+import { reportFileProblem } from './diagnostics';
+import { syncProjectMetadata } from './projectMetadata';
 import fs from 'node:fs';
 import path from 'node:path';
 import chokidar, { type FSWatcher } from 'chokidar';
@@ -28,12 +30,12 @@ export function watchProject(projectId: string, projectPath: string): void {
 
   watcher.on('add', (filePath) => {
     if (!filePath.endsWith('.md')) return;
-    handleFileChange(projectId, projectPath, filePath);
+    safelySync(projectId, projectPath, filePath);
   });
 
   watcher.on('change', (filePath) => {
     if (!filePath.endsWith('.md')) return;
-    handleFileChange(projectId, projectPath, filePath);
+    safelySync(projectId, projectPath, filePath);
   });
 
   watcher.on('unlink', (filePath) => {
@@ -51,9 +53,15 @@ export function watchProject(projectId: string, projectPath: string): void {
       dirName === '_project' || dirName === '_story' ? 'note' : ENTITY_PATTERNS[dirName];
     if (!entityType) return;
 
-    removeEntityFromDbBySlug(projectId, entityType, path.basename(filePath, '.md'));
+    try {
+      removeEntityFromDbBySlug(projectId, entityType, path.basename(filePath, '.md'));
+      reportFileProblem(filePath);
+    } catch (cause) {
+      console.error(`Cannot remove index for ${filePath}`, cause);
+    }
   });
 
+  watcher.on('error', (cause) => console.error(`Watcher failed: ${projectPath}`, cause));
   watchers.set(projectId, watcher);
 }
 
@@ -62,6 +70,15 @@ export function unwatchProject(projectId: string): void {
   if (watcher) {
     watcher.close();
     watchers.delete(projectId);
+  }
+}
+
+function safelySync(projectId: string, projectPath: string, filePath: string): void {
+  try {
+    handleFileChange(projectId, projectPath, filePath);
+  } catch (cause) {
+    reportFileProblem(filePath, String(cause));
+    console.error(`Cannot index ${filePath}`, cause);
   }
 }
 
@@ -98,6 +115,7 @@ function handleNoteFileChange(projectId: string, filePath: string): void {
 export function scanProject(projectId: string, projectPath: string): void {
   if (!fs.existsSync(projectPath)) return;
 
+  syncProjectMetadata(projectId);
   const seenIds = new Set<string>();
 
   const scanDir = (fullDir: string, entityType: EntityType) => {
@@ -107,8 +125,17 @@ export function scanProject(projectId: string, projectPath: string): void {
       if (!md) continue;
       const id = md.frontmatter.id as string;
       if (!id) continue;
+      if (seenIds.has(id)) {
+        reportFileProblem(path.join(fullDir, file), `Duplicate entity id: ${id}`);
+        continue;
+      }
       seenIds.add(id);
-      syncEntityToDb(projectId, entityType, id, md.frontmatter);
+      try {
+        syncEntityToDb(projectId, entityType, id, md.frontmatter);
+      } catch (cause) {
+        reportFileProblem(path.join(fullDir, file), String(cause));
+        console.error(`Cannot index ${path.join(fullDir, file)}`, cause);
+      }
     }
   };
 
@@ -121,4 +148,10 @@ export function scanProject(projectId: string, projectPath: string): void {
 
   // The filesystem is the source of truth — drop index rows with no backing file.
   pruneMissingEntities(projectId, seenIds);
+}
+
+export async function unwatchAllProjects(): Promise<void> {
+  const closing = [...watchers.values()].map((watcher) => watcher.close());
+  watchers.clear();
+  await Promise.all(closing);
 }

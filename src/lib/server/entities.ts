@@ -1,11 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import db from './db';
+import { fileRevision, assertRevision } from './storage';
 import { entities as entitiesTable } from './schema';
 import { eq, and, like, desc } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { readMarkdownFile, writeMarkdownFile, type Frontmatter } from './markdown';
-import { generateId, slugify } from '$lib/utils';
+import { generateId, slugify, isSafePathSegment } from '$lib/utils';
 import type { EntityType } from '$lib/types';
 
 const drizzleDb = drizzle(db);
@@ -21,6 +22,7 @@ export const ENTITY_DIRS: Record<EntityType, string> = {
 };
 
 export interface EntityData {
+  revision?: string;
   id: string;
   projectId: string;
   type: EntityType;
@@ -82,22 +84,9 @@ export function resolveEntityPath(
   type: EntityType,
   id: string
 ): string | null {
+  if (!isSafePathSegment(id)) return null;
   const dir = getEntityDir(projectPath, type);
   if (!fs.existsSync(dir)) return null;
-
-  const slugRecord = drizzleDb
-    .select({ slug: entitiesTable.slug })
-    .from(entitiesTable)
-    .where(eq(entitiesTable.id, id))
-    .get();
-
-  if (slugRecord?.slug) {
-    const slugPath = path.join(dir, `${slugRecord.slug}.md`);
-    if (fs.existsSync(slugPath)) {
-      const md = readMarkdownFile(slugPath);
-      if (md && md.frontmatter.id === id) return slugPath;
-    }
-  }
 
   const files = fs.readdirSync(dir).filter((f) => f.endsWith('.md'));
 
@@ -132,17 +121,24 @@ export function listEntities(
     if (!md) continue;
 
     results.push({
+      revision: fileRevision(filePath),
       id: md.frontmatter.id as string,
       projectId,
       type,
-      name: (md.frontmatter.name as string) || file.replace('.md', ''),
-      tags: (md.frontmatter.tags as string[]) || [],
-      status: (md.frontmatter.status as string) || 'draft',
-      imagePath: (md.frontmatter.imagePath as string) || null,
+      name: String(md.frontmatter.name ?? '') || file.replace('.md', ''),
+      tags: Array.isArray(md.frontmatter.tags) ? md.frontmatter.tags.map(String) : [],
+      status: typeof md.frontmatter.status === 'string' ? md.frontmatter.status : 'draft',
+      imagePath: typeof md.frontmatter.imagePath === 'string' ? md.frontmatter.imagePath : null,
       body: md.body,
       frontmatter: md.frontmatter as Record<string, unknown>,
-      createdAt: (md.frontmatter.created as string) || new Date().toISOString(),
-      modifiedAt: (md.frontmatter.modified as string) || new Date().toISOString()
+      createdAt:
+        typeof md.frontmatter.created === 'string'
+          ? md.frontmatter.created
+          : new Date().toISOString(),
+      modifiedAt:
+        typeof md.frontmatter.modified === 'string'
+          ? md.frontmatter.modified
+          : new Date().toISOString()
     });
   }
 
@@ -164,17 +160,24 @@ export function getEntity(
   if (!md) return null;
 
   return {
+    revision: fileRevision(filePath),
     id: md.frontmatter.id as string,
     projectId,
     type,
-    name: (md.frontmatter.name as string) || id,
-    tags: (md.frontmatter.tags as string[]) || [],
-    status: (md.frontmatter.status as string) || 'draft',
-    imagePath: (md.frontmatter.imagePath as string) || null,
+    name: String(md.frontmatter.name ?? '') || id,
+    tags: Array.isArray(md.frontmatter.tags) ? md.frontmatter.tags.map(String) : [],
+    status: typeof md.frontmatter.status === 'string' ? md.frontmatter.status : 'draft',
+    imagePath: typeof md.frontmatter.imagePath === 'string' ? md.frontmatter.imagePath : null,
     body: md.body,
     frontmatter: md.frontmatter as Record<string, unknown>,
-    createdAt: (md.frontmatter.created as string) || new Date().toISOString(),
-    modifiedAt: (md.frontmatter.modified as string) || new Date().toISOString()
+    createdAt:
+      typeof md.frontmatter.created === 'string'
+        ? md.frontmatter.created
+        : new Date().toISOString(),
+    modifiedAt:
+      typeof md.frontmatter.modified === 'string'
+        ? md.frontmatter.modified
+        : new Date().toISOString()
   };
 }
 
@@ -199,7 +202,9 @@ export function createEntity(
     created: now,
     modified: now,
     ...Object.fromEntries(
-      Object.entries(data).filter(([k]) => !['name', 'body', 'tags'].includes(k))
+      Object.entries(data).filter(
+        ([k]) => !['id', 'type', 'slug', 'created', 'modified', 'name', 'body', 'tags'].includes(k)
+      )
     )
   };
 
@@ -233,7 +238,8 @@ export function updateEntity(
   projectPath: string,
   type: EntityType,
   id: string,
-  data: Record<string, unknown>
+  data: Record<string, unknown>,
+  expectedRevision?: string
 ): EntityData | null {
   const existing = getEntity(projectId, projectPath, type, id);
   if (!existing) return null;
@@ -241,10 +247,10 @@ export function updateEntity(
   const now = new Date().toISOString();
   const nameChanged = data.name && data.name !== existing.name;
 
-  let currentSlug = existing.frontmatter.slug as string | undefined;
-  if (!currentSlug) {
-    currentSlug = generateUniqueSlug(projectPath, type, existing.name);
-  }
+  const resolvedPath = resolveEntityPath(projectPath, type, id);
+  if (!resolvedPath) return null;
+  assertRevision(resolvedPath, expectedRevision);
+  const currentSlug = path.basename(resolvedPath, '.md');
 
   let newSlug = currentSlug;
   if (nameChanged) {
@@ -266,7 +272,7 @@ export function updateEntity(
 
   if (nameChanged && newSlug !== currentSlug) {
     const dir = getEntityDir(projectPath, type);
-    const oldPath = path.join(dir, `${currentSlug}.md`);
+    const oldPath = resolvedPath;
     const newPath = path.join(dir, `${newSlug}.md`);
 
     writeMarkdownFile(newPath, frontmatter, body);
@@ -287,7 +293,8 @@ export function updateEntity(
     ...(data as Record<string, unknown>),
     body,
     frontmatter,
-    modifiedAt: now
+    modifiedAt: now,
+    revision: fileRevision(resolveEntityPath(projectPath, type, id)!)
   } as EntityData;
 }
 
@@ -344,6 +351,7 @@ export function syncEntityToDb(
   id: string,
   frontmatter: Record<string, unknown>
 ): void {
+  if (typeof id !== 'string' || !id) throw new Error('Entity id must be a nonempty string');
   const now = new Date().toISOString();
   const existing = drizzleDb
     .select()
@@ -355,17 +363,21 @@ export function syncEntityToDb(
     id,
     projectId,
     type,
-    name: (frontmatter.name as string) || id,
-    slug: (frontmatter.slug as string) || null,
-    tags: (frontmatter.tags as string[]) || [],
-    status: (frontmatter.status as string) || 'draft',
-    imagePath: (frontmatter.imagePath as string) || null,
-    createdAt: (frontmatter.created as string) || now,
-    modifiedAt: (frontmatter.modified as string) || now
+    name: String(frontmatter.name ?? id),
+    slug: typeof frontmatter.slug === 'string' ? frontmatter.slug : null,
+    tags: Array.isArray(frontmatter.tags) ? frontmatter.tags.map(String) : [],
+    status: typeof frontmatter.status === 'string' ? frontmatter.status : 'draft',
+    imagePath: typeof frontmatter.imagePath === 'string' ? frontmatter.imagePath : null,
+    createdAt: typeof frontmatter.created === 'string' ? frontmatter.created : now,
+    modifiedAt: typeof frontmatter.modified === 'string' ? frontmatter.modified : now
   };
 
   if (existing) {
-    drizzleDb.update(entitiesTable).set(record).where(eq(entitiesTable.id, id)).run();
+    drizzleDb
+      .update(entitiesTable)
+      .set(record)
+      .where(and(eq(entitiesTable.id, id), eq(entitiesTable.projectId, projectId)))
+      .run();
   } else {
     drizzleDb.insert(entitiesTable).values(record).run();
   }

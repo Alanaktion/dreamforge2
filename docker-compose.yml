@@ -10,17 +10,16 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=3000
+      - BODY_SIZE_LIMIT=${BODY_SIZE_LIMIT:-20971520}
       - DATABASE_PATH=/data/dreamforge.db
       - DATA_DIR=/data/projects
-      - PUBLIC_ALLOW_REGISTRATION=${PUBLIC_ALLOW_REGISTRATION:-true}
+      - PUBLIC_ALLOW_REGISTRATION=${PUBLIC_ALLOW_REGISTRATION:-false}
       - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@dreamforge.local}
-      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-changeme}
-      # Trust the X-Forwarded-Proto header from a reverse proxy so the app sees the
-      # real request protocol. Required for form submissions (SvelteKit CSRF check)
-      # and secure cookies to work behind a proxy. Your proxy must set the header.
-      # Note: direct plain-HTTP access without a proxy is not supported for forms —
-      # use a reverse proxy (http or https) in front of the container.
-      - PROTOCOL_HEADER=x-forwarded-proto
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
+      - ORIGIN=${ORIGIN:-http://localhost:3000}
+      - BACKUP_DIR=/data/backups
+      - BACKUP_INTERVAL=${BACKUP_INTERVAL:-86400}
+      - BACKUP_RETENTION=${BACKUP_RETENTION:-10}
     volumes:
       - dreamforge-data:/data
 

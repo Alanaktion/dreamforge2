@@ -1,3 +1,4 @@
+import { ConflictError } from '$lib/server/storage';
 import { fail, redirect } from '@sveltejs/kit';
 import {
   getEntity,
@@ -138,7 +139,10 @@ export const actions = {
     const form = await request.formData();
     const data: Record<string, unknown> = {};
     for (const [key, value] of form.entries()) {
-      if (tagFields.has(key)) {
+      if (key === 'revision' || key === 'overwrite') continue;
+      if (boolFields.has(key)) {
+        data[key] = value === 'true' || value === 'on';
+      } else if (tagFields.has(key)) {
         data[key] = (value as string)
           .split(',')
           .map((s) => s.trim())
@@ -147,11 +151,21 @@ export const actions = {
         data[key] = value;
       }
     }
-    for (const key of boolFields) {
-      if (!(key in data)) data[key] = false;
+    try {
+      const updated = updateEntity(
+        params.id,
+        project.dataPath,
+        entityType,
+        params.entityId,
+        data,
+        form.get('overwrite') === 'true' ? undefined : String(form.get('revision') ?? '')
+      );
+      if (!updated) return fail(404, { error: 'Entity not found' });
+      return { success: true, revision: updated.revision };
+    } catch (cause) {
+      if (cause instanceof ConflictError) return fail(409, { error: cause.message });
+      throw cause;
     }
-    updateEntity(params.id, project.dataPath, entityType, params.entityId, data);
-    return { success: true };
   },
 
   answerPrompt: async ({ params, locals, request }) => {

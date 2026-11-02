@@ -1,3 +1,4 @@
+import { ConflictError, StorageError } from '$lib/server/storage';
 import { fail, redirect } from '@sveltejs/kit';
 import {
   getStoryMeta,
@@ -155,17 +156,32 @@ export const actions = {
           .split(',')
           .map((s) => s.trim())
           .filter(Boolean);
-      else if (key !== 'chapterId' && key !== 'sceneId') data[key] = value;
+      else if (!['chapterId', 'sceneId', 'revision', 'overwrite'].includes(key)) data[key] = value;
     }
 
     const before = getScene(project.dataPath, params.storyId, chapterId, sceneId);
-    const updated = updateScene(project.dataPath, params.storyId, chapterId, sceneId, data as any);
-
-    if (updated) {
-      recordWords(project.dataPath, countWords(updated.body) - countWords(before?.body));
+    try {
+      const updated = updateScene(
+        project.dataPath,
+        params.storyId,
+        chapterId,
+        sceneId,
+        data,
+        form.get('overwrite') === 'true' ? undefined : String(form.get('revision') ?? '')
+      );
+      if (!updated) return fail(404, { error: 'Scene not found' });
+      let warning = '';
+      try {
+        recordWords(project.dataPath, countWords(updated.body) - countWords(before?.body));
+      } catch (cause) {
+        if (!(cause instanceof StorageError)) throw cause;
+        warning = `Scene saved, but writing progress could not be updated: ${cause.message}`;
+      }
+      return { success: true, revision: updated.revision, warning };
+    } catch (cause) {
+      if (cause instanceof ConflictError) return fail(409, { error: cause.message });
+      throw cause;
     }
-
-    return { success: true };
   },
 
   deleteScene: async ({ params, locals, request }) => {

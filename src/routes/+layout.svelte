@@ -38,6 +38,14 @@
           ? `background-image: url(${zen.backgroundImage}); background-size: cover; background-position: center; background-attachment: fixed;`
           : ''}
       >
+        {#if page.data.storageProblems?.length}
+          <aside role="alert" class="m-3 rounded border border-destructive p-3">
+            <p>Some files could not be read. Repair them on disk; other items remain available.</p>
+            {#each page.data.storageProblems as problem}<p>
+                {problem.file}: {problem.message}
+              </p>{/each}
+          </aside>
+        {/if}
         {@render children()}
       </main>
     </SidebarUI.Provider>

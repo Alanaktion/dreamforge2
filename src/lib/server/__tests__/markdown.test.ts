@@ -95,18 +95,18 @@ describe('serializeMarkdown', () => {
     expect(result).toContain('Body text');
   });
 
-  it('omits null and undefined values', () => {
+  it('preserves null and omits undefined values', () => {
     const result = serializeMarkdown(
       { id: 'test', name: 'Test', empty: null, undef: undefined },
       'body'
     );
-    expect(result).not.toContain('empty');
+    expect(parseMarkdown(result).frontmatter.empty).toBeNull();
     expect(result).not.toContain('undef');
   });
 
   it('serializes arrays as JSON', () => {
     const result = serializeMarkdown({ id: 'test', tags: ['a', 'b', 'c'] }, 'body');
-    expect(result).toContain('tags: ["a","b","c"]');
+    expect(parseMarkdown(result).frontmatter.tags).toEqual(['a', 'b', 'c']);
   });
 
   it('round-trips correctly', () => {
@@ -162,7 +162,7 @@ backstory: |
 ---
 body`;
     const result = parseMarkdown(content);
-    expect(result.frontmatter.backstory).toBe('Once upon a time\nin a land far away');
+    expect(result.frontmatter.backstory).toBe('Once upon a time\nin a land far away\n');
   });
 
   it('continues parsing after a block scalar', () => {
@@ -175,7 +175,7 @@ status: wip
 ---
 body`;
     const result = parseMarkdown(content);
-    expect(result.frontmatter.backstory).toBe('line one\nline two');
+    expect(result.frontmatter.backstory).toBe('line one\nline two\n');
     expect(result.frontmatter.status).toBe('wip');
   });
 });

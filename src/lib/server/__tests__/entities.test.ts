@@ -254,14 +254,15 @@ describe('getEntity', () => {
     expect(result!.body).toContain('Entity body');
   });
 
-  it('returns fallback entity when file has no frontmatter', () => {
+  it('skips an item with missing frontmatter without rewriting it', () => {
     const dir = path.join(tmpDir, 'characters');
     const id = generateId();
     fs.writeFileSync(path.join(dir, `${id}.md`), 'not valid markdown with frontmatter');
     const result = getEntity(TEST_PROJECT_ID, tmpDir, 'character', id);
-    expect(result).not.toBeNull();
-    expect(result!.id).toBe('');
-    expect(result!.body).toBe('not valid markdown with frontmatter');
+    expect(result).toBeNull();
+    expect(fs.readFileSync(path.join(dir, `${id}.md`), 'utf8')).toBe(
+      'not valid markdown with frontmatter'
+    );
   });
 });
 
@@ -683,5 +684,70 @@ describe('duplicateEntity', () => {
       'lantern-copy.md',
       'lantern.md'
     ]);
+  });
+});
+
+describe('data safety regressions', () => {
+  it('renames an existing file without a slug without leaving a duplicate', () => {
+    const file = path.join(tmpDir, 'characters', 'vess.md');
+    const id = generateId();
+    writeMarkdownFile(file, { id, name: 'Vess', type: 'character' }, 'Body');
+    updateEntity(TEST_PROJECT_ID, tmpDir, 'character', id, { name: 'Vess renamed' });
+    expect(fs.existsSync(file)).toBe(false);
+    expect(fs.readdirSync(path.dirname(file))).toEqual(['vess-renamed.md']);
+    expect(getEntity(TEST_PROJECT_ID, tmpDir, 'character', id)?.frontmatter.slug).toBe(
+      'vess-renamed'
+    );
+  });
+
+  it('keeps identical entity IDs independent in two projects', () => {
+    const firstProject = TEST_PROJECT_ID;
+    insertTestProject();
+    const secondProject = TEST_PROJECT_ID;
+    const id = generateId();
+    syncEntityToDb(firstProject, 'character', id, { name: 'First' });
+    syncEntityToDb(secondProject, 'character', id, { name: 'Second' });
+    syncEntityToDb(secondProject, 'character', id, { name: 'Second updated' });
+    expect(searchEntities(firstProject, '').find((entity) => entity.id === id)?.name).toBe('First');
+    expect(searchEntities(secondProject, '').find((entity) => entity.id === id)?.name).toBe(
+      'Second updated'
+    );
+  });
+
+  it('rejects a stale save while retaining the newer file', () => {
+    const entity = createEntity(TEST_PROJECT_ID, tmpDir, 'character', { name: '[Untitled]' });
+    const loaded = getEntity(TEST_PROJECT_ID, tmpDir, 'character', entity.id)!;
+    updateEntity(TEST_PROJECT_ID, tmpDir, 'character', entity.id, { body: 'external' });
+    expect(() =>
+      updateEntity(
+        TEST_PROJECT_ID,
+        tmpDir,
+        'character',
+        entity.id,
+        { body: 'stale' },
+        loaded.revision
+      )
+    ).toThrow('changed elsewhere');
+    expect(getEntity(TEST_PROJECT_ID, tmpDir, 'character', entity.id)?.body).toBe('external');
+  });
+});
+
+describe('project scans', () => {
+  it('continues past an invalid file and safely indexes legacy scalar names', async () => {
+    const { scanProject } = await import('../watcher');
+    const logger = vi.spyOn(console, 'error').mockImplementation(() => {});
+    fs.writeFileSync(path.join(tmpDir, 'characters', 'bad.md'), '---\nid: bad\nname: [\n---\n');
+    fs.writeFileSync(
+      path.join(tmpDir, 'characters', 'legacy.md'),
+      '---\nid: legacy\nname: [Untitled]\n---\n'
+    );
+    createEntity(TEST_PROJECT_ID, tmpDir, 'character', { name: 'Good' });
+    expect(() => scanProject(TEST_PROJECT_ID, tmpDir)).not.toThrow();
+    expect(
+      searchEntities(TEST_PROJECT_ID, '')
+        .map((entity) => entity.name)
+        .sort()
+    ).toEqual(['Good', 'Untitled']);
+    logger.mockRestore();
   });
 });

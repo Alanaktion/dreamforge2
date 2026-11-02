@@ -14,13 +14,13 @@ docker run -d \
   --name dreamforge \
   -p 3000:3000 \
   -e ADMIN_EMAIL=admin@dreamforge.local \
-  -e ADMIN_PASSWORD=changeme \
-  -e PUBLIC_ALLOW_REGISTRATION=true \
+  -e ORIGIN=http://localhost:3000 \
+  -e PUBLIC_ALLOW_REGISTRATION=false \
   -v ./dreamforge-data:/data \
   ghcr.io/sola-ryu/dreamforge2:latest
 ```
 
-Open http://localhost:3000 and log in with `admin@dreamforge.local` / `changeme`.
+Open http://localhost:3000. Read the generated administrator password once from `docker logs dreamforge`, then log in as `admin@dreamforge.local`. Set `ADMIN_PASSWORD` explicitly to supply your own password. Registration is disabled by default.
 
 ### Using docker-compose
 
@@ -37,9 +37,9 @@ Set via environment variables:
 | --------------------------- | ------------------------ | ---------------------------------------------------- |
 | `DATABASE_PATH`             | `/data/dreamforge.db`    | SQLite database path                                 |
 | `DATA_DIR`                  | `/data/projects`         | Projects directory                                   |
-| `PUBLIC_ALLOW_REGISTRATION` | `true`                   | Allow new user signups                               |
+| `PUBLIC_ALLOW_REGISTRATION` | `false`                  | Allow new user signups                               |
 | `ADMIN_EMAIL`               | `admin@dreamforge.local` | Initial admin email                                  |
-| `ADMIN_PASSWORD`            | `changeme`               | Initial admin password                               |
+| `ADMIN_PASSWORD`            | Generated once           | Initial admin password                               |
 | `BODY_SIZE_LIMIT`           | `20971520` (20 MB)       | Max upload size in bytes (e.g. `52428800` for 50 MB) |
 
 ## Development
@@ -85,3 +85,47 @@ docker compose -f docker-compose.dev.yml up
 - PDF export (browser print-to-PDF)
 - Multi-user with session-based auth
 - Light / dark themes
+
+## Backups and restore
+
+Automatic ZIP backups run every `BACKUP_INTERVAL` seconds (default 86400), retain
+`BACKUP_RETENTION` archives (default 10), and live in `BACKUP_DIR` (default a
+`backups` directory beside the projects directory). Keep that directory on a
+persistent volume. Project settings provide a per-project enable switch, **Back
+up now**, and downloads. Import a ZIP on the projects page to restore into a new
+project. Uploads are limited to 20 MB, with a 512 MB / 20,000-entry extraction
+limit. Export streams the project files and portable metadata; instance users,
+sessions, and membership remain instance-local. Store a database backup separately
+if you need to recover instance accounts and permissions.
+
+## Deploying behind a reverse proxy
+
+Set `ORIGIN` to the exact externally visible URL, including scheme and port, such
+as `https://writing.example.com`. Direct local HTTP uses
+`ORIGIN=http://localhost:3000`. Do not disable SvelteKit's CSRF protection.
+
+Caddy:
+
+```caddy
+writing.example.com {
+    reverse_proxy dreamforge:3000
+}
+```
+
+nginx (inside an HTTPS server block with your certificate configured):
+
+```nginx
+location / {
+    proxy_pass http://dreamforge:3000;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+
+For deployments serving multiple origins, configure `PROTOCOL_HEADER=x-forwarded-proto`
+instead of `ORIGIN` only when the app is accessible exclusively through a trusted
+proxy that replaces that header.
+
+The container runs as the `node` user (UID 1000). When upgrading an existing
+installation, ensure its mounted `/data` directory and files are writable by UID 1000. Initial administrator accounts must change their password on first login;
+the Account page also changes email and username and revokes other sessions.

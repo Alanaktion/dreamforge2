@@ -1,3 +1,4 @@
+import { readJson, writeJson } from './storage';
 import fs from 'node:fs';
 import path from 'node:path';
 import { generateId } from '$lib/utils';
@@ -47,21 +48,23 @@ function getTimelinePath(projectPath: string): string {
 }
 
 export function loadTimeline(projectPath: string): TimelineData {
-  const filePath = getTimelinePath(projectPath);
-  try {
-    const data = fs.readFileSync(filePath, 'utf-8');
-    return JSON.parse(data) as TimelineData;
-  } catch {
-    return {
+  return readJson(
+    getTimelinePath(projectPath),
+    {
       calendar: { name: 'Gregorian', months: [...DEFAULT_MONTHS], epoch: 0 },
       events: []
-    };
-  }
+    },
+    (value) =>
+      !!value &&
+      typeof value === 'object' &&
+      Array.isArray((value as TimelineData).events) &&
+      Array.isArray((value as TimelineData).calendar?.months)
+  );
 }
 
 function saveTimeline(projectPath: string, data: TimelineData): void {
   fs.mkdirSync(projectPath, { recursive: true });
-  fs.writeFileSync(getTimelinePath(projectPath), JSON.stringify(data, null, 2));
+  writeJson(getTimelinePath(projectPath), data);
 }
 
 export function addEvent(

@@ -94,6 +94,29 @@
 <svelte:head>
   <title>Settings — {page.data?.project?.name || 'Project'} — DreamForge</title>
 </svelte:head>
+{#if isOwner}
+  <section class="mx-auto my-6 max-w-4xl space-y-3 rounded border p-4">
+    <h2 class="text-lg font-semibold">Backups</h2>
+    <form method="POST" action="?/backup" use:enhance>
+      <Button type="submit">Back up now</Button>
+    </form>
+    <form method="POST" action="?/backupSettings" use:enhance>
+      <label
+        ><input type="checkbox" name="enabled" checked={page.data?.backupEnabled} /> Automatic backups</label
+      >
+      <Button type="submit" variant="outline">Save backup settings</Button>
+    </form>
+    {#each page.data?.backups ?? [] as backup}
+      <p>
+        <a class="underline" href={`/projects/${page.params.id}/backups/${backup.name}`}
+          >{backup.createdAt}</a
+        >
+        ({Math.round(backup.size / 1024)} KB)
+      </p>
+    {:else}<p>No backups yet.</p>{/each}
+    {#if page.form?.error}<p role="alert" class="text-destructive">{page.form.error}</p>{/if}
+  </section>
+{/if}
 
 <div class="mx-auto max-w-4xl p-6">
   <div class="mb-6">

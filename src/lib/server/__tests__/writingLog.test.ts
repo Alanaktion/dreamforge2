@@ -40,9 +40,9 @@ describe('readWritingLog', () => {
     });
   });
 
-  it('returns defaults when the file is corrupt', () => {
+  it('refuses to reset a corrupt log', () => {
     fs.writeFileSync(path.join(tmpDir, 'writing-log.json'), 'not json');
-    expect(readWritingLog(tmpDir).dailyGoal).toBe(DEFAULT_DAILY_GOAL);
+    expect(() => readWritingLog(tmpDir)).toThrow('Repair the file');
   });
 });
 

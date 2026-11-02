@@ -71,6 +71,18 @@
     </div>
   {/if}
 
+  <form
+    method="POST"
+    action="?/import"
+    enctype="multipart/form-data"
+    use:enhance
+    class="mb-6 space-y-2"
+  >
+    <Label for="archive">Import project from ZIP (up to 20 MB)</Label>
+    <input id="archive" name="archive" type="file" accept=".zip" required />
+    <Button type="submit" variant="outline">Import project</Button>
+  </form>
+  {#if page.form?.error}<p role="alert" class="text-destructive">{page.form.error}</p>{/if}
   <div class="space-y-3">
     {#if (page.data?.projects?.length ?? 0) === 0 && (page.data?.sharedProjects?.length ?? 0) === 0}
       <div class="flex flex-col items-center py-16 text-center">

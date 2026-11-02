@@ -318,6 +318,13 @@
         </Sidebar.MenuButton>
       </Sidebar.MenuItem>
       <Sidebar.MenuItem>
+        <Sidebar.MenuButton tooltipContent="Account">
+          {#snippet child({ props })}<a href="/account" {...props}
+              ><Users class="h-4 w-4" /><span>Account</span></a
+            >{/snippet}
+        </Sidebar.MenuButton>
+      </Sidebar.MenuItem>
+      <Sidebar.MenuItem>
         <Sidebar.MenuButton tooltipContent="Log Out">
           {#snippet child({ props })}
             <a href="/logout" {...props}>

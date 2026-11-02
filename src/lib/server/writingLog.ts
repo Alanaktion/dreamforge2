@@ -1,4 +1,4 @@
-import fs from 'node:fs';
+import { readJson, writeJson } from './storage';
 import path from 'node:path';
 import type { WritingProgress } from '$lib/types';
 
@@ -33,29 +33,28 @@ function logPath(projectPath: string): string {
 }
 
 export function readWritingLog(projectPath: string): WritingLogFile {
-  try {
-    const parsed = JSON.parse(fs.readFileSync(logPath(projectPath), 'utf-8'));
-    return {
-      dailyGoal:
-        typeof parsed.dailyGoal === 'number' && parsed.dailyGoal >= 0
-          ? parsed.dailyGoal
-          : DEFAULT_DAILY_GOAL,
-      storyTargets:
-        parsed.storyTargets && typeof parsed.storyTargets === 'object' ? parsed.storyTargets : {},
-      days: parsed.days && typeof parsed.days === 'object' ? parsed.days : {}
-    };
-  } catch {
-    return { dailyGoal: DEFAULT_DAILY_GOAL, storyTargets: {}, days: {} };
-  }
+  return readJson(
+    logPath(projectPath),
+    { dailyGoal: DEFAULT_DAILY_GOAL, storyTargets: {}, days: {} },
+    (value) =>
+      !!value &&
+      typeof value === 'object' &&
+      typeof (value as WritingLogFile).dailyGoal === 'number' &&
+      (value as WritingLogFile).dailyGoal >= 0 &&
+      [(value as WritingLogFile).days, (value as WritingLogFile).storyTargets].every(
+        (entries) =>
+          !!entries &&
+          typeof entries === 'object' &&
+          !Array.isArray(entries) &&
+          Object.values(entries).every(
+            (entry) => typeof entry === 'number' && Number.isFinite(entry)
+          )
+      )
+  );
 }
 
 function writeWritingLog(projectPath: string, log: WritingLogFile): void {
-  try {
-    fs.writeFileSync(logPath(projectPath), JSON.stringify(log, null, 2));
-  } catch {
-    // The log is a convenience layer over the Markdown files; a project directory
-    // that cannot be written to should not break saving a scene.
-  }
+  writeJson(logPath(projectPath), log);
 }
 
 /**

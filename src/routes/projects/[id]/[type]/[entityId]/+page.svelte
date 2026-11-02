@@ -157,6 +157,8 @@
 
   let saveStatus = $state<'idle' | 'saving' | 'saved' | 'error'>('idle');
   let saveError = $state('');
+  let revision = $state('');
+  let conflict = $state(false);
   let timer: ReturnType<typeof setTimeout> | null = null;
 
   let dirty = $derived(Object.keys(values).some((key) => values[key] !== synced[key]));
@@ -181,6 +183,8 @@
     untrack(() => {
       if (entity.id !== loadedId) {
         loadedId = entity.id;
+        revision = entity.revision ?? '';
+        conflict = false;
         values = incoming;
         synced = incoming;
         shown = new Set();
@@ -189,6 +193,8 @@
         showConvert = false;
         addingRelation = false;
       } else {
+        if (!Object.keys(values).some((key) => values[key] !== synced[key]))
+          revision = entity.revision ?? revision;
         const next = { ...values };
         for (const key of Object.keys(incoming)) {
           if (values[key] === synced[key] && values[key] !== incoming[key]) {
@@ -207,15 +213,17 @@
     if (!canEdit || !dirty) return;
     JSON.stringify(values);
     const status = saveStatus;
-    if (status === 'saving') return;
+    if (status === 'saving' || conflict) return;
     timer = setTimeout(() => void save(), status === 'error' ? RETRY_DELAY : AUTOSAVE_DELAY);
     return () => {
       if (timer) clearTimeout(timer);
     };
   });
 
-  async function save(keepalive = false): Promise<boolean> {
+  async function save(keepalive = false, overwrite = false): Promise<boolean> {
     if (!canEdit) return true;
+    if (conflict && !overwrite) return false;
+    if (saveStatus === 'saving') return false;
     if (timer) clearTimeout(timer);
     const payload = { ...values };
     if (!Object.keys(payload).some((key) => payload[key] !== synced[key])) return true;
@@ -229,10 +237,12 @@
     saveError = '';
     try {
       const body = new URLSearchParams();
+      body.set('revision', revision);
+      if (overwrite) body.set('overwrite', 'true');
       for (const [key, value] of Object.entries(payload)) {
         const def = fieldDefs.find((f) => f.key === key);
         if (def?.type === 'boolean') {
-          if (value === 'true') body.set(key, 'on');
+          if (value !== synced[key]) body.set(key, value);
           continue;
         }
         if (value !== synced[key]) body.set(key, value);
@@ -245,12 +255,15 @@
       });
       const result = deserialize(await res.text());
       if (result.type !== 'success') {
+        if (result.type === 'failure' && result.status === 409) conflict = true;
         throw new Error(
           result.type === 'failure'
             ? (result.data as { error?: string } | undefined)?.error || 'Save failed'
             : 'Save failed'
         );
       }
+      revision = (result.data as { revision?: string })?.revision ?? revision;
+      conflict = false;
       synced = payload;
       saveStatus = 'saved';
       return true;
@@ -264,6 +277,7 @@
   beforeNavigate((nav) => {
     if (!canEdit || !dirty) return;
     if (nav.willUnload) {
+      nav.cancel();
       void save(true);
       return;
     }
@@ -389,6 +403,17 @@
             {#if saveStatus === 'error'}
               <CloudOff class="h-3 w-3" />
               {saveError}
+              {#if conflict}
+                <button type="button" onclick={() => window.location.reload()}>Reload latest</button
+                >
+                <button
+                  type="button"
+                  onclick={() => {
+                    if (window.confirm('Overwrite the changes made elsewhere?'))
+                      void save(false, true);
+                  }}>Overwrite with my edits</button
+                >
+              {/if}
             {:else if saveStatus === 'saving'}
               <Loader2 class="h-3 w-3 animate-spin" />
               Saving…

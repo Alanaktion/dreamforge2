@@ -1,10 +1,11 @@
-import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, primaryKey } from 'drizzle-orm/sqlite-core';
 
 export const users = sqliteTable('users', {
   id: text('id').primaryKey(),
   email: text('email').notNull().unique(),
   username: text('username').notNull().unique(),
   passwordHash: text('password_hash').notNull(),
+  mustChangePassword: integer('must_change_password', { mode: 'boolean' }).notNull().default(false),
   createdAt: text('created_at').notNull()
 });
 
@@ -29,20 +30,24 @@ export const projects = sqliteTable('projects', {
   modifiedAt: text('modified_at').notNull()
 });
 
-export const entities = sqliteTable('entities', {
-  id: text('id').primaryKey(),
-  projectId: text('project_id')
-    .notNull()
-    .references(() => projects.id),
-  type: text('type').notNull(),
-  name: text('name').notNull(),
-  slug: text('slug'),
-  tags: text('tags', { mode: 'json' }).$type<string[]>().default([]),
-  status: text('status').notNull().default('draft'),
-  imagePath: text('image_path'),
-  createdAt: text('created_at').notNull(),
-  modifiedAt: text('modified_at').notNull()
-});
+export const entities = sqliteTable(
+  'entities',
+  {
+    id: text('id').notNull(),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => projects.id),
+    type: text('type').notNull(),
+    name: text('name').notNull(),
+    slug: text('slug'),
+    tags: text('tags', { mode: 'json' }).$type<string[]>().default([]),
+    status: text('status').notNull().default('draft'),
+    imagePath: text('image_path'),
+    createdAt: text('created_at').notNull(),
+    modifiedAt: text('modified_at').notNull()
+  },
+  (table) => [primaryKey({ columns: [table.projectId, table.id] })]
+);
 
 export const bookmarks = sqliteTable('bookmarks', {
   id: text('id').primaryKey(),

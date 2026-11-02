@@ -247,8 +247,10 @@
   }
 
   /** Mirror a saved cell edit onto the local row so the grid updates without a reload. */
-  function applySavedCell(entityId: string, column: GridColumn, raw: string) {
-    allEntities = allEntities.map((e) => (e.id === entityId ? applyCellValue(e, column, raw) : e));
+  function applySavedCell(entityId: string, column: GridColumn, raw: string, revision?: string) {
+    allEntities = allEntities.map((e) =>
+      e.id === entityId ? { ...applyCellValue(e, column, raw), revision } : e
+    );
   }
 </script>
 

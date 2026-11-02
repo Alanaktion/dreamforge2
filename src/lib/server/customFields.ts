@@ -1,3 +1,4 @@
+import { withProjectMetadata } from './projectMetadata';
 import db from './db';
 import { customFieldDefs } from './schema';
 import { eq, and } from 'drizzle-orm';
@@ -48,7 +49,7 @@ export function getCustomFieldDefs(projectId: string, entityType?: EntityType): 
   }));
 }
 
-export function setCustomFieldDefs(
+function setCustomFieldDefsImpl(
   projectId: string,
   defs: Omit<CustomFieldDef, 'id' | 'projectId'>[]
 ): CustomFieldDef[] {
@@ -74,7 +75,7 @@ export function setCustomFieldDefs(
   return records;
 }
 
-export function addCustomFieldDef(
+function addCustomFieldDefImpl(
   projectId: string,
   entityType: EntityType,
   def: {
@@ -112,10 +113,25 @@ export function addCustomFieldDef(
   return record;
 }
 
-export function deleteCustomFieldDef(projectId: string, fieldId: string): boolean {
+function deleteCustomFieldDefImpl(projectId: string, fieldId: string): boolean {
   const result = drizzleDb
     .delete(customFieldDefs)
     .where(and(eq(customFieldDefs.id, fieldId), eq(customFieldDefs.projectId, projectId)))
     .run();
   return result.changes > 0;
 }
+
+export const setCustomFieldDefs = (
+  ...args: Parameters<typeof setCustomFieldDefsImpl>
+): ReturnType<typeof setCustomFieldDefsImpl> =>
+  withProjectMetadata(args[0], () => setCustomFieldDefsImpl(...args));
+
+export const addCustomFieldDef = (
+  ...args: Parameters<typeof addCustomFieldDefImpl>
+): ReturnType<typeof addCustomFieldDefImpl> =>
+  withProjectMetadata(args[0], () => addCustomFieldDefImpl(...args));
+
+export const deleteCustomFieldDef = (
+  ...args: Parameters<typeof deleteCustomFieldDefImpl>
+): ReturnType<typeof deleteCustomFieldDefImpl> =>
+  withProjectMetadata(args[0], () => deleteCustomFieldDefImpl(...args));

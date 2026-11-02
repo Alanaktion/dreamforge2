@@ -1,3 +1,4 @@
+import { withProjectMetadata } from './projectMetadata';
 import db from './db';
 import { bookmarks } from './schema';
 import { eq, and } from 'drizzle-orm';
@@ -25,7 +26,7 @@ export function getBookmarks(userId: string, projectId: string): BookmarkEntry[]
     .all();
 }
 
-export function addBookmark(userId: string, projectId: string, entityId: string): void {
+function addBookmarkImpl(userId: string, projectId: string, entityId: string): void {
   const existing = drizzleDb
     .select()
     .from(bookmarks)
@@ -52,7 +53,7 @@ export function addBookmark(userId: string, projectId: string, entityId: string)
   }
 }
 
-export function removeBookmark(userId: string, projectId: string, entityId: string): void {
+function removeBookmarkImpl(userId: string, projectId: string, entityId: string): void {
   drizzleDb
     .delete(bookmarks)
     .where(
@@ -79,3 +80,13 @@ export function isBookmarked(userId: string, projectId: string, entityId: string
     .get();
   return !!result;
 }
+
+export const addBookmark = (
+  ...args: Parameters<typeof addBookmarkImpl>
+): ReturnType<typeof addBookmarkImpl> =>
+  withProjectMetadata(args[1], () => addBookmarkImpl(...args));
+
+export const removeBookmark = (
+  ...args: Parameters<typeof removeBookmarkImpl>
+): ReturnType<typeof removeBookmarkImpl> =>
+  withProjectMetadata(args[1], () => removeBookmarkImpl(...args));

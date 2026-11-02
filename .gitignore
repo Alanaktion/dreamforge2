@@ -10,3 +10,7 @@ package/
 data/
 .DS_Store
 CLAUDE.md
+
+work/
+test-results/
+playwright-report/

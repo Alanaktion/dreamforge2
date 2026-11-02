@@ -1,5 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { readMarkdownFile, writeMarkdownFile } from './markdown';
+import { writeFileAtomic, fileRevision, assertRevision } from './storage';
 import { generateId, isSafePathSegment } from '$lib/utils';
 
 export interface StoryMeta {
@@ -35,6 +37,7 @@ function normalizeStatus(value: unknown): SceneStatus {
 }
 
 export interface SceneData {
+  revision?: string;
   id: string;
   chapterId: string;
   title: string | null;
@@ -87,30 +90,6 @@ export function getScenePath(
 ): string {
   assertSafeId(sceneId);
   return path.join(getScenesDir(projectPath, storyId, chapterId), `${sceneId}.md`);
-}
-
-// Chapter/scene frontmatter is written as one `key: value` pair per line and read
-// back with a per-line regex, so a raw value containing a newline splits into extra
-// lines the parser can't match, silently dropping everything after it. JSON-quoting
-// keeps the value on a single line (embedded newlines become the literal `\n`
-// escape); quoteYamlScalar only does this when needed, so existing hand-edited or
-// previously-written unquoted files still round-trip.
-function quoteYamlScalar(value: string): string {
-  if (value.includes('\n') || value.startsWith('"')) {
-    return JSON.stringify(value);
-  }
-  return value;
-}
-
-function unquoteYamlScalar(raw: string): string {
-  if (raw.startsWith('"') && raw.endsWith('"')) {
-    try {
-      return JSON.parse(raw);
-    } catch {
-      return raw;
-    }
-  }
-  return raw;
 }
 
 // --- Stories ---
@@ -167,7 +146,7 @@ export function createStory(projectPath: string, title: string, description?: st
   const dir = getStoryDir(projectPath, id);
   fs.mkdirSync(dir, { recursive: true });
   fs.mkdirSync(path.join(dir, 'chapters'), { recursive: true });
-  fs.writeFileSync(path.join(dir, 'story.json'), JSON.stringify(meta, null, 2));
+  writeFileAtomic(path.join(dir, 'story.json'), JSON.stringify(meta, null, 2));
 
   return meta;
 }
@@ -182,7 +161,7 @@ export function updateStory(
 
   const updated = { ...meta, ...data, modifiedAt: new Date().toISOString() };
   const filePath = path.join(getStoryDir(projectPath, storyId), 'story.json');
-  fs.writeFileSync(filePath, JSON.stringify(updated, null, 2));
+  writeFileAtomic(filePath, JSON.stringify(updated, null, 2));
 
   return updated;
 }
@@ -214,23 +193,16 @@ export function listChapters(projectPath: string, storyId: string): ChapterMeta[
 // purely to populate the returned ChapterMeta — pass '' where it isn't known/needed.
 export function readChapterFile(filePath: string, chapterId: string): ChapterMeta | null {
   try {
-    const content = fs.readFileSync(filePath, 'utf-8');
-    const match = content.match(/^---\n([\s\S]*?)\n---\n/);
-    if (!match) return null;
-    const yaml = match[1];
-    const lines = yaml.split('\n');
-    const meta: Record<string, string> = {};
-    for (const line of lines) {
-      const m = line.match(/^(\w+):\s*(.*)$/);
-      if (m) meta[m[1]] = unquoteYamlScalar(m[2]);
-    }
+    const md = readMarkdownFile(filePath);
+    if (!md || !md.frontmatter.id) return null;
+    const meta = md.frontmatter;
     return {
-      id: meta.id || chapterId,
-      storyId: meta.storyId || '',
-      title: meta.title || 'Untitled',
-      sortOrder: parseInt(meta.sortOrder || '0', 10),
-      createdAt: meta.createdAt || new Date().toISOString(),
-      modifiedAt: meta.modifiedAt || new Date().toISOString()
+      id: String(meta.id || chapterId),
+      storyId: String(meta.storyId || ''),
+      title: String(meta.title ?? 'Untitled'),
+      sortOrder: Number(meta.sortOrder || 0),
+      createdAt: String(meta.createdAt || new Date().toISOString()),
+      modifiedAt: String(meta.modifiedAt || new Date().toISOString())
     };
   } catch {
     return null;
@@ -269,8 +241,7 @@ export function createChapter(projectPath: string, storyId: string, title: strin
   fs.mkdirSync(dir, { recursive: true });
   fs.mkdirSync(path.join(dir, 'scenes'), { recursive: true });
 
-  const frontmatter = `---\nid: ${id}\ntitle: ${quoteYamlScalar(title)}\nsortOrder: ${maxOrder + 1}\ncreatedAt: ${now}\nmodifiedAt: ${now}\n---\n\n`;
-  fs.writeFileSync(path.join(dir, 'chapter.md'), frontmatter);
+  writeMarkdownFile(path.join(dir, 'chapter.md'), { ...meta }, '');
 
   return meta;
 }
@@ -288,8 +259,8 @@ export function updateChapter(
   const updated = { ...meta, ...data, modifiedAt: now };
   const filePath = path.join(getChapterDir(projectPath, storyId, chapterId), 'chapter.md');
 
-  const frontmatter = `---\nid: ${updated.id}\ntitle: ${quoteYamlScalar(updated.title)}\nsortOrder: ${updated.sortOrder}\ncreatedAt: ${updated.createdAt}\nmodifiedAt: ${updated.modifiedAt}\n---\n\n`;
-  fs.writeFileSync(filePath, frontmatter);
+  const md = readMarkdownFile(filePath);
+  writeMarkdownFile(filePath, { ...md?.frontmatter, ...updated }, md?.body ?? '');
 
   return updated;
 }
@@ -301,50 +272,26 @@ export function updateChapter(
 // `stories/<id>/chapters/<id>/scenes/<id>.md` layout.
 export function readSceneFile(filePath: string, chapterId: string): SceneData | null {
   try {
-    const content = fs.readFileSync(filePath, 'utf-8');
-    const match = content.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
-    if (!match) return null;
-    const yaml = match[1];
-    const body = match[2].trim();
-    const lines = yaml.split('\n');
-    const meta: Record<string, unknown> = {};
-    for (const line of lines) {
-      const m = line.match(/^(\w+):\s*(.*)$/);
-      if (m) meta[m[1]] = unquoteYamlScalar(m[2]);
-    }
-
-    let participants: string[] = [];
-    if (meta.participants) {
-      try {
-        participants = JSON.parse(meta.participants as string);
-      } catch {
-        participants = ((meta.participants as string) || '')
-          .split(',')
-          .map((s) => s.trim())
-          .filter(Boolean);
-      }
-    }
-
-    let plotThreads: PlotThreadData[] = [];
-    if (meta.plotThreads) {
-      try {
-        plotThreads = JSON.parse(meta.plotThreads as string);
-      } catch {
-        plotThreads = [];
-      }
-    }
-
+    const md = readMarkdownFile(filePath);
+    if (!md || !md.frontmatter.id) return null;
+    const meta = md.frontmatter;
+    const body = md.body;
+    const participants = Array.isArray(meta.participants) ? meta.participants.map(String) : [];
+    const plotThreads = Array.isArray(meta.plotThreads)
+      ? (meta.plotThreads as PlotThreadData[])
+      : [];
     return {
       id: (meta.id as string) || path.basename(filePath, '.md'),
+      revision: fileRevision(filePath),
       chapterId,
-      title: (meta.title as string) || null,
+      title: meta.title == null ? null : String(meta.title),
       status: normalizeStatus(meta.status),
-      narrator: (meta.narrator as string) || null,
-      time: (meta.time as string) || null,
-      place: (meta.place as string) || null,
+      narrator: meta.narrator == null ? null : String(meta.narrator),
+      time: meta.time == null ? null : String(meta.time),
+      place: meta.place == null ? null : String(meta.place),
       participants,
-      backgroundImage: (meta.backgroundImage as string) || null,
-      summary: (meta.summary as string) || null,
+      backgroundImage: meta.backgroundImage == null ? null : String(meta.backgroundImage),
+      summary: meta.summary == null ? null : String(meta.summary),
       plotThreads,
       sortOrder: parseInt((meta.sortOrder as string) || '0', 10),
       body,
@@ -422,27 +369,9 @@ export function createScene(
     modifiedAt: now
   };
 
-  const fileContent = `---\n${Object.entries({
-    id,
-    chapterId,
-    title: quoteYamlScalar(scene.title || ''),
-    status: 'draft',
-    narrator: '',
-    time: '',
-    place: '',
-    participants: '[]',
-    backgroundImage: '',
-    summary: '',
-    plotThreads: '[]',
-    sortOrder: maxOrder + 1,
-    createdAt: now,
-    modifiedAt: now
-  })
-    .map(([k, v]) => `${k}: ${v}`)
-    .join('\n')}\n---\n\n`;
-
-  const filePath = path.join(getScenesDir(projectPath, storyId, chapterId), `${id}.md`);
-  fs.writeFileSync(filePath, fileContent);
+  const filePath = getScenePath(projectPath, storyId, chapterId, id);
+  writeMarkdownFile(filePath, { ...scene }, scene.body);
+  scene.revision = fileRevision(filePath);
 
   return scene;
 }
@@ -452,7 +381,8 @@ export function updateScene(
   storyId: string,
   chapterId: string,
   sceneId: string,
-  data: Partial<SceneData>
+  data: Partial<SceneData>,
+  expectedRevision?: string
 ): SceneData | null {
   const scene = getScene(projectPath, storyId, chapterId, sceneId);
   if (!scene) return null;
@@ -461,11 +391,13 @@ export function updateScene(
   const updated = { ...scene, ...data, modifiedAt: now };
 
   const filePath = getScenePath(projectPath, storyId, chapterId, sceneId);
+  assertRevision(filePath, expectedRevision);
   const updatedStatus = normalizeStatus(updated.status);
-  const content = `---\nid: ${updated.id}\nchapterId: ${updated.chapterId}\ntitle: ${quoteYamlScalar(updated.title || '')}\nstatus: ${updatedStatus}\nnarrator: ${quoteYamlScalar(updated.narrator || '')}\ntime: ${quoteYamlScalar(updated.time || '')}\nplace: ${quoteYamlScalar(updated.place || '')}\nparticipants: ${JSON.stringify(updated.participants)}\nbackgroundImage: ${quoteYamlScalar(updated.backgroundImage || '')}\nsummary: ${quoteYamlScalar(updated.summary || '')}\nplotThreads: ${JSON.stringify(updated.plotThreads)}\nsortOrder: ${updated.sortOrder}\ncreatedAt: ${updated.createdAt}\nmodifiedAt: ${updated.modifiedAt}\n---\n\n${updated.body}\n`;
-  fs.writeFileSync(filePath, content);
-
-  return { ...updated, status: updatedStatus };
+  const md = readMarkdownFile(filePath);
+  const frontmatter = { ...md?.frontmatter, ...updated, status: updatedStatus };
+  delete frontmatter.revision;
+  writeMarkdownFile(filePath, frontmatter, updated.body);
+  return { ...updated, status: updatedStatus, revision: fileRevision(filePath) };
 }
 
 export function reorderChapters(projectPath: string, storyId: string, chapterIds: string[]): void {

@@ -1,3 +1,4 @@
+import { withProjectMetadata, persistProjectMetadata } from './projectMetadata';
 import fs from 'node:fs';
 import path from 'node:path';
 import db from './db';
@@ -94,7 +95,7 @@ function getTrashScenePath(projectPath: string, sceneId: string): string {
   return path.join(getTrashDir(projectPath), 'scenes', `${sceneId}.md`);
 }
 
-export function softDeleteEntity(
+function softDeleteEntityImpl(
   projectId: string,
   projectPath: string,
   type: EntityType,
@@ -198,7 +199,7 @@ export function softDeleteEntity(
   };
 }
 
-export function softDeleteStory(
+function softDeleteStoryImpl(
   projectId: string,
   projectPath: string,
   storyId: string
@@ -253,7 +254,7 @@ export function softDeleteStory(
   };
 }
 
-export function softDeleteChapter(
+function softDeleteChapterImpl(
   projectId: string,
   projectPath: string,
   storyId: string,
@@ -307,7 +308,7 @@ export function softDeleteChapter(
   };
 }
 
-export function softDeleteScene(
+function softDeleteSceneImpl(
   projectId: string,
   projectPath: string,
   storyId: string,
@@ -364,7 +365,7 @@ export function softDeleteScene(
   };
 }
 
-export function softDeleteImage(
+function softDeleteImageImpl(
   projectId: string,
   projectPath: string,
   imageId: string
@@ -585,7 +586,7 @@ function permanentDeleteImage(
   return true;
 }
 
-export function restoreEntity(projectId: string, projectPath: string, trashId: string): boolean {
+function restoreEntityImpl(projectId: string, projectPath: string, trashId: string): boolean {
   const item = drizzleDb
     .select()
     .from(trashTable)
@@ -676,7 +677,7 @@ export function restoreEntity(projectId: string, projectPath: string, trashId: s
   return true;
 }
 
-export function permanentDeleteEntity(
+function permanentDeleteEntityImpl(
   projectId: string,
   projectPath: string,
   trashId: string
@@ -870,5 +871,45 @@ export function purgeExpiredTrashItems(): void {
     }
 
     drizzleDb.delete(trashTable).where(eq(trashTable.id, item.id)).run();
+    try {
+      persistProjectMetadata(item.projectId);
+    } catch (cause) {
+      console.error(`Cannot persist trash expiry for ${item.projectId}`, cause);
+    }
   }
 }
+
+export const softDeleteEntity = (
+  ...args: Parameters<typeof softDeleteEntityImpl>
+): ReturnType<typeof softDeleteEntityImpl> =>
+  withProjectMetadata(args[0], () => softDeleteEntityImpl(...args));
+
+export const softDeleteStory = (
+  ...args: Parameters<typeof softDeleteStoryImpl>
+): ReturnType<typeof softDeleteStoryImpl> =>
+  withProjectMetadata(args[0], () => softDeleteStoryImpl(...args));
+
+export const softDeleteChapter = (
+  ...args: Parameters<typeof softDeleteChapterImpl>
+): ReturnType<typeof softDeleteChapterImpl> =>
+  withProjectMetadata(args[0], () => softDeleteChapterImpl(...args));
+
+export const softDeleteScene = (
+  ...args: Parameters<typeof softDeleteSceneImpl>
+): ReturnType<typeof softDeleteSceneImpl> =>
+  withProjectMetadata(args[0], () => softDeleteSceneImpl(...args));
+
+export const softDeleteImage = (
+  ...args: Parameters<typeof softDeleteImageImpl>
+): ReturnType<typeof softDeleteImageImpl> =>
+  withProjectMetadata(args[0], () => softDeleteImageImpl(...args));
+
+export const restoreEntity = (
+  ...args: Parameters<typeof restoreEntityImpl>
+): ReturnType<typeof restoreEntityImpl> =>
+  withProjectMetadata(args[0], () => restoreEntityImpl(...args));
+
+export const permanentDeleteEntity = (
+  ...args: Parameters<typeof permanentDeleteEntityImpl>
+): ReturnType<typeof permanentDeleteEntityImpl> =>
+  withProjectMetadata(args[0], () => permanentDeleteEntityImpl(...args));

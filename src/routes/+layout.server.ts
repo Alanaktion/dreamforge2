@@ -1,3 +1,5 @@
+import { scanProject, watchProject } from '$lib/server/watcher';
+import { projectProblems } from '$lib/server/diagnostics';
 import type { LayoutServerLoad } from './$types';
 import { getBookmarks } from '$lib/server/bookmarks';
 import { registrationAllowed } from '$lib/server/registration';
@@ -17,13 +19,18 @@ export const load: LayoutServerLoad = async ({ locals, url }) => {
     entityType?: string;
   }> = [];
   let projectId = '';
+  let storageProblems: Array<{ file: string; message: string }> = [];
   const entityCounts: Record<string, number> = {};
 
   // Extract project ID from URL: /projects/[id]/...
   const match = url.pathname.match(/^\/projects\/([^/]+)/);
   if (match) {
     projectId = match[1];
-    if (locals.user && getProjectAccess(projectId, locals.user.id)) {
+    const access = locals.user ? getProjectAccess(projectId, locals.user.id) : null;
+    if (access) {
+      scanProject(projectId, access.project.dataPath);
+      watchProject(projectId, access.project.dataPath);
+      storageProblems = projectProblems(access.project.dataPath);
       const rows = drizzleDb
         .select({ type: entities.type, count: sql<number>`count(*)` })
         .from(entities)
@@ -60,6 +67,7 @@ export const load: LayoutServerLoad = async ({ locals, url }) => {
           createdAt: locals.user.createdAt
         }
       : null,
+    storageProblems,
     bookmarks,
     entityCounts,
     projectId,

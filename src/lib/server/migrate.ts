@@ -110,21 +110,43 @@ export function migrate() {
     );
   `);
 
-  try {
-    db.exec(`ALTER TABLE entities ADD COLUMN slug TEXT`);
-  } catch {
-    // Column already exists — ignore
-  }
-
-  try {
-    db.exec(`ALTER TABLE trash_items ADD COLUMN kind TEXT NOT NULL DEFAULT 'entity'`);
-  } catch {
-    // Column already exists — ignore
-  }
-
-  try {
-    db.exec(`ALTER TABLE trash_items ADD COLUMN metadata TEXT`);
-  } catch {
-    // Column already exists — ignore
-  }
+  const addColumn = (table: string, name: string, definition: string) => {
+    const columns = db.pragma(`table_info(${table})`) as Array<{ name: string }>;
+    if (!columns.some((column) => column.name === name))
+      db.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${definition}`);
+  };
+  db.transaction(() => {
+    const version = db.pragma('user_version', { simple: true }) as number;
+    if (version > 2) throw new Error('Database was created by a newer DreamForge version');
+    if (version < 1) {
+      addColumn('entities', 'slug', 'TEXT');
+      addColumn('trash_items', 'kind', "TEXT NOT NULL DEFAULT 'entity'");
+      addColumn('trash_items', 'metadata', 'TEXT');
+      db.exec(`
+        CREATE TABLE entities_v1 (
+          id TEXT NOT NULL, project_id TEXT NOT NULL REFERENCES projects(id),
+          type TEXT NOT NULL, name TEXT NOT NULL, slug TEXT, tags TEXT DEFAULT '[]',
+          status TEXT NOT NULL DEFAULT 'draft', image_path TEXT,
+          created_at TEXT NOT NULL, modified_at TEXT NOT NULL,
+          PRIMARY KEY (project_id, id)
+        );
+        INSERT INTO entities_v1 SELECT id, project_id, type, name, slug, tags, status, image_path, created_at, modified_at FROM entities;
+        DROP TABLE entities;
+        ALTER TABLE entities_v1 RENAME TO entities;
+        CREATE INDEX entities_project_type ON entities(project_id, type);
+        CREATE INDEX sessions_user ON sessions(user_id);
+        CREATE INDEX sessions_expiry ON sessions(expires_at);
+        CREATE INDEX bookmarks_user_project ON bookmarks(user_id, project_id);
+        CREATE INDEX comments_target ON comments(project_id, target_type, target_id);
+        CREATE INDEX images_project ON project_images(project_id);
+        CREATE INDEX image_links_entity ON image_entity_links(project_id, entity_id);
+        CREATE UNIQUE INDEX users_email_normalized ON users(lower(email));
+        PRAGMA user_version = 1;
+      `);
+    }
+    if (version < 2) {
+      addColumn('users', 'must_change_password', 'INTEGER NOT NULL DEFAULT 0');
+      db.pragma('user_version = 2');
+    }
+  })();
 }

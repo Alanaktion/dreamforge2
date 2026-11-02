@@ -2,7 +2,6 @@ import { redirect } from '@sveltejs/kit';
 import { getProjectAccess } from '$lib/server/members';
 import { getProjectStats } from '$lib/server/stats';
 import { getWritingProgress } from '$lib/server/writingLog';
-import { scanProject, watchProject } from '$lib/server/watcher';
 import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ params, locals }) => {
@@ -16,9 +15,6 @@ export const load: PageServerLoad = async ({ params, locals }) => {
   }
 
   const { project, role } = access;
-
-  scanProject(params.id, project.dataPath);
-  watchProject(params.id, project.dataPath);
 
   return {
     project: {

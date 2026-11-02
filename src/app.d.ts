@@ -5,6 +5,7 @@ declare global {
       email: string;
       username: string;
       passwordHash: string;
+      mustChangePassword?: boolean;
       createdAt: string;
     }
     interface Session {

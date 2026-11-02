@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { deserialize } from '$app/forms';
   import { tick } from 'svelte';
   import EntityGridCell from '$lib/components/EntityGridCell.svelte';
   import EntityGridPanel from '$lib/components/EntityGridPanel.svelte';
@@ -41,7 +42,7 @@
     refEntities?: Record<string, { id: string; name: string }[]>;
     emptyMessage?: string;
     entityHref: (entity: Record<string, any>) => string;
-    onSaved: (entityId: string, column: GridColumn, raw: string) => void;
+    onSaved: (entityId: string, column: GridColumn, raw: string, revision?: string) => void;
     sort?: { key: string; dir: SortDirection } | null;
     onSort?: (key: string) => void;
     /** Resolves to an error message, or null once the row exists. */
@@ -75,18 +76,22 @@
     body.set('entityId', entityId);
     body.set('field', column.key);
     body.set('value', raw);
+    body.set('revision', entities.find((entity) => entity.id === entityId)?.revision ?? '');
 
     const res = await fetch(`/projects/${projectId}/${route}?/quickUpdate`, {
       method: 'POST',
       body
     });
 
-    if (res.ok) {
-      onSaved(entityId, column, raw);
+    const result = deserialize(await res.text());
+    if (result.type === 'success') {
+      onSaved(entityId, column, raw, (result.data as { revision?: string })?.revision);
       return true;
     }
-    gridError = `Could not save ${column.label}.`;
-    setTimeout(() => (gridError = ''), 4000);
+    gridError =
+      result.type === 'failure' && result.status === 409
+        ? 'This item changed elsewhere. Your edit was not saved. Copy it, then reload the page before retrying.'
+        : `Could not save ${column.label}.`;
     return false;
   }
 

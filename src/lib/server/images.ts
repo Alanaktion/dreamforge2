@@ -1,3 +1,6 @@
+import { validImageSignature } from './imageSignature';
+import { withProjectMetadata } from './projectMetadata';
+import { writeFileAtomic } from './storage';
 import fs from 'node:fs';
 import path from 'node:path';
 import db from './db';
@@ -41,7 +44,7 @@ function allowedFile(ext: string): boolean {
   return ALLOWED_EXTENSIONS.includes(ext.toLowerCase());
 }
 
-export function uploadImages(
+function uploadImagesImpl(
   projectId: string,
   projectPath: string,
   files: { name: string; buffer: Buffer }[]
@@ -55,14 +58,14 @@ export function uploadImages(
 
   for (const file of files) {
     const ext = path.extname(file.name);
-    if (!allowedFile(ext)) continue;
+    if (!allowedFile(ext) || !validImageSignature(ext, file.buffer)) continue;
 
     const now = new Date().toISOString();
     const id = generateId();
     const filename = `${id}${ext}`;
     const filePath = path.join(imageDir, filename);
 
-    fs.writeFileSync(filePath, file.buffer);
+    writeFileAtomic(filePath, file.buffer);
 
     drizzleDb
       .insert(projectImages)
@@ -118,7 +121,7 @@ export function listProjectImages(projectId: string, _projectPath: string): Proj
     const entityRows = drizzleDb
       .select({ id: entities.id, name: entities.name, type: entities.type })
       .from(entities)
-      .where(inArray(entities.id, entityIds))
+      .where(and(eq(entities.projectId, projectId), inArray(entities.id, entityIds)))
       .all();
     const entityMap = new Map(entityRows.map((e) => [e.id, e]));
 
@@ -169,9 +172,12 @@ export function getProjectImage(
       .select({ id: entities.id, name: entities.name, type: entities.type })
       .from(entities)
       .where(
-        inArray(
-          entities.id,
-          links.map((l) => l.entityId)
+        and(
+          eq(entities.projectId, projectId),
+          inArray(
+            entities.id,
+            links.map((link) => link.entityId)
+          )
         )
       )
       .all();
@@ -193,7 +199,7 @@ export function getProjectImage(
   };
 }
 
-export function updateImage(
+function updateImageImpl(
   projectId: string,
   imageId: string,
   data: { caption?: string | null; altText?: string | null }
@@ -215,7 +221,7 @@ export function deleteImage(projectId: string, projectPath: string, imageId: str
   return result !== null;
 }
 
-export function linkEntityToImage(projectId: string, imageId: string, entityId: string): boolean {
+function linkEntityToImageImpl(projectId: string, imageId: string, entityId: string): boolean {
   const existing = drizzleDb
     .select()
     .from(imageEntityLinks)
@@ -243,11 +249,7 @@ export function linkEntityToImage(projectId: string, imageId: string, entityId: 
   return true;
 }
 
-export function unlinkEntityFromImage(
-  projectId: string,
-  imageId: string,
-  entityId: string
-): boolean {
+function unlinkEntityFromImageImpl(projectId: string, imageId: string, entityId: string): boolean {
   const result = drizzleDb
     .delete(imageEntityLinks)
     .where(
@@ -293,7 +295,7 @@ export function getImagesForEntity(projectId: string, entityId: string): Project
   }));
 }
 
-export function scanExistingImages(projectId: string, projectPath: string): void {
+function scanExistingImagesImpl(projectId: string, projectPath: string): void {
   const imageDir = getImageDir(projectPath);
   if (!fs.existsSync(imageDir)) return;
 
@@ -315,7 +317,7 @@ export function scanExistingImages(projectId: string, projectPath: string): void
     const stat = fs.statSync(filePath);
     const ext = path.extname(filename).toLowerCase();
     const now = new Date().toISOString();
-    const id = filename.replace(ext, '');
+    const id = generateId();
 
     drizzleDb
       .insert(projectImages)
@@ -333,3 +335,28 @@ export function scanExistingImages(projectId: string, projectPath: string): void
       .run();
   }
 }
+
+export const uploadImages = (
+  ...args: Parameters<typeof uploadImagesImpl>
+): ReturnType<typeof uploadImagesImpl> =>
+  withProjectMetadata(args[0], () => uploadImagesImpl(...args));
+
+export const updateImage = (
+  ...args: Parameters<typeof updateImageImpl>
+): ReturnType<typeof updateImageImpl> =>
+  withProjectMetadata(args[0], () => updateImageImpl(...args));
+
+export const linkEntityToImage = (
+  ...args: Parameters<typeof linkEntityToImageImpl>
+): ReturnType<typeof linkEntityToImageImpl> =>
+  withProjectMetadata(args[0], () => linkEntityToImageImpl(...args));
+
+export const unlinkEntityFromImage = (
+  ...args: Parameters<typeof unlinkEntityFromImageImpl>
+): ReturnType<typeof unlinkEntityFromImageImpl> =>
+  withProjectMetadata(args[0], () => unlinkEntityFromImageImpl(...args));
+
+export const scanExistingImages = (
+  ...args: Parameters<typeof scanExistingImagesImpl>
+): ReturnType<typeof scanExistingImagesImpl> =>
+  withProjectMetadata(args[0], () => scanExistingImagesImpl(...args));

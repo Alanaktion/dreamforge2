@@ -1,3 +1,6 @@
+import { createBackup, listBackups, backupSettings } from '$lib/server/backups';
+import { writeJson } from '$lib/server/storage';
+import path from 'node:path';
 import { fail, redirect } from '@sveltejs/kit';
 import {
   getCustomFieldDefs,
@@ -31,6 +34,8 @@ export const load: PageServerLoad = async ({ params, locals }) => {
   return {
     project: { ...project, pinned: Boolean(project.pinned) },
     customFields,
+    backups: role === 'owner' ? listBackups(params.id) : [],
+    backupEnabled: backupSettings(project.dataPath).enabled,
     members,
     dailyGoal: readWritingLog(project.dataPath).dailyGoal,
     role
@@ -38,6 +43,27 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 };
 
 export const actions = {
+  backup: async ({ params, locals }) => {
+    if (!locals.user) return fail(401, { error: 'Unauthorized' });
+    const access = getProjectAccess(params.id, locals.user.id);
+    if (access?.role !== 'owner') return fail(403, { error: 'Only the owner can manage backups' });
+    try {
+      await createBackup(params.id, access.project.dataPath);
+      return { success: true };
+    } catch (cause) {
+      return fail(500, { error: cause instanceof Error ? cause.message : 'Backup failed' });
+    }
+  },
+  backupSettings: async ({ params, locals, request }) => {
+    if (!locals.user) return fail(401, { error: 'Unauthorized' });
+    const access = getProjectAccess(params.id, locals.user.id);
+    if (access?.role !== 'owner') return fail(403, { error: 'Only the owner can manage backups' });
+    const form = await request.formData();
+    writeJson(path.join(access.project.dataPath, 'backup-settings.json'), {
+      enabled: form.get('enabled') === 'on'
+    });
+    return { success: true };
+  },
   updateProject: async ({ params, locals, request }) => {
     if (!locals.user) return fail(401, { error: 'Unauthorized' });
 

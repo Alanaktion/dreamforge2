@@ -1,3 +1,4 @@
+import { withProjectMetadata } from './projectMetadata';
 import db from './db';
 import { comments, users } from './schema';
 import { eq, and } from 'drizzle-orm';
@@ -45,7 +46,7 @@ export function getComments(projectId: string, targetType: string, targetId: str
   return rows.map((r) => ({ ...r, resolved: Boolean(r.resolved) }));
 }
 
-export function createComment(
+function createCommentImpl(
   projectId: string,
   targetType: string,
   targetId: string,
@@ -79,7 +80,7 @@ export function createComment(
   };
 }
 
-export function deleteComment(
+function deleteCommentImpl(
   projectId: string,
   commentId: string,
   requestingUserId: string,
@@ -99,7 +100,7 @@ export function deleteComment(
   return true;
 }
 
-export function resolveComment(projectId: string, commentId: string, resolved: boolean): boolean {
+function resolveCommentImpl(projectId: string, commentId: string, resolved: boolean): boolean {
   const result = drizzleDb
     .update(comments)
     .set({ resolved })
@@ -107,3 +108,18 @@ export function resolveComment(projectId: string, commentId: string, resolved: b
     .run();
   return result.changes > 0;
 }
+
+export const createComment = (
+  ...args: Parameters<typeof createCommentImpl>
+): ReturnType<typeof createCommentImpl> =>
+  withProjectMetadata(args[0], () => createCommentImpl(...args));
+
+export const deleteComment = (
+  ...args: Parameters<typeof deleteCommentImpl>
+): ReturnType<typeof deleteCommentImpl> =>
+  withProjectMetadata(args[0], () => deleteCommentImpl(...args));
+
+export const resolveComment = (
+  ...args: Parameters<typeof resolveCommentImpl>
+): ReturnType<typeof resolveCommentImpl> =>
+  withProjectMetadata(args[0], () => resolveCommentImpl(...args));
