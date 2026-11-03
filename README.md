@@ -146,6 +146,11 @@ will end up in your shell history.
 
 ## Backups and restore
 
+> **Not available during the backend rework.** The FastAPI backend does not run automatic
+> backups or ZIP import/export yet; they return in the next stage of the port. Until then, back
+> up the projects directory and the database file yourself. The description below is how they
+> work once ported.
+
 Automatic ZIP backups run every `BACKUP_INTERVAL` seconds (default 86400), retain
 `BACKUP_RETENTION` archives (default 10), and live in `BACKUP_DIR` (default a
 `backups` directory beside the projects directory). Keep that directory on a
