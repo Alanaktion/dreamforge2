@@ -35,7 +35,12 @@ if (!commands[mode]) {
 const children = commands[mode].map(([command, args]) =>
   spawn(command, args, {
     stdio: 'inherit',
-    env: { ...process.env, API_URL: process.env.API_URL ?? `http://127.0.0.1:${API_PORT}` },
+    env: {
+      ...process.env,
+      API_URL: process.env.API_URL ?? `http://127.0.0.1:${API_PORT}`,
+      // Interactive API docs (/api/docs) in development only.
+      API_DOCS: process.env.API_DOCS ?? (mode === 'start' ? 'false' : 'true')
+    },
     shell: process.platform === 'win32'
   })
 );

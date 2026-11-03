@@ -1,11 +1,14 @@
 """Request and response bodies. JSON uses camelCase, matching what the Svelte pages expect."""
 
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, StringConstraints
 from pydantic.alias_generators import to_camel
 
 Role = Literal["editor", "commenter"]
+# scrypt is slow by design; don't let a request hand it megabytes.
+Password = Annotated[str, StringConstraints(max_length=1024)]
+Text = Annotated[str, StringConstraints(max_length=1000)]
 
 
 class Model(BaseModel):
@@ -32,15 +35,15 @@ class Me(Model):
 
 
 class LoginRequest(Model):
-    email: str = ""
-    password: str = ""
+    email: Text = ""
+    password: Password = ""
     next: str | None = None
 
 
 class RegisterRequest(Model):
-    email: str = ""
-    username: str = ""
-    password: str = ""
+    email: Text = ""
+    username: Text = ""
+    password: Password = ""
     invite: str | None = None
 
 
@@ -55,16 +58,16 @@ class AccountInfo(Model):
 
 
 class AccountUpdate(Model):
-    current_password: str = ""
-    email: str = ""
-    username: str = ""
-    password: str = ""
+    current_password: Password = ""
+    email: Text = ""
+    username: Text = ""
+    password: Password = ""
     logout_others: bool = False
 
 
 class AccountDelete(Model):
-    password: str = ""
-    confirm: str = ""
+    password: Password = ""
+    confirm: Text = ""
 
 
 class AdminUser(Model):
@@ -127,7 +130,7 @@ class Member(Model):
 
 
 class MemberAdd(Model):
-    query: str = ""
+    query: Text = ""
     role: str = ""
 
 
@@ -159,18 +162,18 @@ class ProjectList(Model):
 
 
 class ProjectCreate(Model):
-    name: str = ""
-    description: str = ""
+    name: Text = ""
+    description: Annotated[str, StringConstraints(max_length=10000)] = ""
     preset: str = "blank"
 
 
 class ProjectUpdate(Model):
-    name: str = ""
-    description: str = ""
+    name: Text = ""
+    description: Annotated[str, StringConstraints(max_length=10000)] = ""
 
 
 class ProjectDelete(Model):
-    confirm_name: str = ""
+    confirm_name: Text = ""
 
 
 class ProjectAccess(Model):

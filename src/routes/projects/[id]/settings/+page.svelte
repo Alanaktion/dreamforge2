@@ -108,23 +108,6 @@
       memberError = cause instanceof ApiError ? cause.message : 'Could not reach the server.';
     }
   }
-
-  let reindexing = $state(false);
-  let reindexMessage = $state('');
-
-  async function reindex() {
-    reindexing = true;
-    reindexMessage = '';
-    try {
-      const res = await fetch(`/api/projects/${page.params.id}/sync`, { method: 'POST' });
-      reindexMessage = res.ok ? 'Index rebuilt from disk.' : 'Re-index failed.';
-      await invalidateAll();
-    } catch {
-      reindexMessage = 'Re-index failed.';
-    } finally {
-      reindexing = false;
-    }
-  }
 </script>
 
 <svelte:head>
@@ -675,13 +658,11 @@
           while the server was stopped and something looks out of date, re-index from disk.
         </p>
         <NotPorted />
-        <Button onclick={reindex} disabled variant="outline">
-          <RefreshCw class="h-4 w-4 {reindexing ? 'animate-spin' : ''}" />
-          {reindexing ? 'Re-indexing…' : 'Re-index from disk'}
+        <!-- Re-indexing (legacy/routes/api/projects/[id]/sync) is not ported yet. -->
+        <Button disabled variant="outline">
+          <RefreshCw class="h-4 w-4" />
+          Re-index from disk
         </Button>
-        {#if reindexMessage}<p role="status" class="text-sm text-muted-foreground">
-            {reindexMessage}
-          </p>{/if}
       </div>
     </details>
   {/if}

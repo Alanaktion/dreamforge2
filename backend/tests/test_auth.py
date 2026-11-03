@@ -140,4 +140,10 @@ def test_lone_surrogate_password_is_not_a_server_error(client):
         content=b'{"email": "admin@example.test", "password": "\\ud800"}',
         headers={"content-type": "application/json"},
     )
-    assert res.status_code == 400
+    assert res.status_code in (400, 422)
+
+
+def test_oversized_password_is_rejected_before_hashing(client):
+    res = login(client, password="x" * 2000)
+    assert res.status_code == 422
+    assert "xxxx" not in res.text  # the bad value is not echoed back

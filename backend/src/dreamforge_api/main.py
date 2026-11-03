@@ -11,6 +11,7 @@ from contextlib import asynccontextmanager
 from urllib.parse import urlsplit
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from sqlmodel import Session
 
@@ -79,10 +80,19 @@ def create_app() -> FastAPI:
         title="DreamForge API",
         version="0.1.0",
         lifespan=lifespan,
-        docs_url="/api/docs",
-        openapi_url="/api/openapi.json",
+        docs_url="/api/docs" if settings.api_docs else None,
+        openapi_url="/api/openapi.json" if settings.api_docs else None,
         redoc_url=None,
     )
+
+    @app.middleware("http")
+    async def body_limit(request: Request, call_next):
+        # Refuses declared oversized bodies up front. Bodies without a Content-Length
+        # (chunked) are not counted yet; upload endpoints must enforce their own limit.
+        length = request.headers.get("content-length")
+        if length and length.isdigit() and int(length) > settings.body_size_limit:
+            return JSONResponse({"detail": "Request body too large"}, status_code=413)
+        return await call_next(request)
 
     @app.middleware("http")
     async def csrf(request: Request, call_next):
@@ -93,6 +103,13 @@ def create_app() -> FastAPI:
         ):
             return JSONResponse({"detail": "Cross-site request refused"}, status_code=403)
         return await call_next(request)
+
+    @app.exception_handler(RequestValidationError)
+    async def invalid(request: Request, err: RequestValidationError):
+        # FastAPI's default echoes each bad value back, which would repeat passwords in
+        # responses (and fails outright on strings that are not valid UTF-8).
+        errors = [{"loc": e["loc"], "msg": e["msg"], "type": e["type"]} for e in err.errors()]
+        return JSONResponse({"detail": errors}, status_code=422)
 
     @app.exception_handler(ConflictError)
     async def conflict(request: Request, err: ConflictError):

@@ -92,3 +92,24 @@ def test_shell(admin):
     project_id = create(admin)
     shell = admin.get(f"/api/projects/{project_id}/shell").json()
     assert shell == {"projectName": "World", "role": "owner", "entityCounts": {}, "bookmarks": []}
+
+
+def test_delete_never_removes_folders_outside_data_dir(admin, env):
+    from sqlmodel import Session
+
+    from dreamforge_api.db import get_engine
+    from dreamforge_api.models import Project
+
+    project_id = create(admin)
+    outside = Path(env) / "elsewhere"
+    outside.mkdir()
+    (outside / "project.json").write_text("{}")
+    with Session(get_engine(write=True)) as db:
+        project = db.get(Project, project_id)
+        project.data_path = str(outside)
+        db.add(project)
+        db.commit()
+    # Move the real folder away so resolve_project_path keeps the stored (outside) path.
+    (Path(env) / "projects" / project_id).rename(Path(env) / "moved")
+    admin.request("DELETE", f"/api/projects/{project_id}", json={"confirmName": "World"})
+    assert outside.exists()

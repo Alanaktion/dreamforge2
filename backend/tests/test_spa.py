@@ -25,3 +25,19 @@ def test_spa_fallback_and_assets(env):
 def test_unbuilt_frontend_explains_itself(client):
     res = client.get("/")
     assert res.status_code == 503 and "npm run build" in res.text
+
+
+def test_api_docs_off_unless_enabled(monkeypatch):
+    with make_client() as client:
+        assert client.get("/api/docs").status_code == 404
+        assert client.get("/api/openapi.json").status_code == 404
+    monkeypatch.setenv("API_DOCS", "true")
+    with make_client() as client:
+        assert client.get("/api/openapi.json").status_code == 200
+
+
+def test_body_size_limit(monkeypatch):
+    monkeypatch.setenv("BODY_SIZE_LIMIT", "100")
+    with make_client() as client:
+        res = client.post("/api/auth/login", json={"email": "a@b.test", "password": "x" * 200})
+        assert res.status_code == 413

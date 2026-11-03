@@ -49,6 +49,8 @@ Set via environment variables:
 | `ADMIN_PASSWORD`            | Generated once           | Initial admin password                                                    |
 | `ORIGIN`                    | unset                    | Public URL(s), comma-separated; API writes from other origins are refused |
 | `FRONTEND_DIR`              | `./build`                | The built SPA that FastAPI serves                                         |
+| `BODY_SIZE_LIMIT`           | `20971520` (20 MB)       | Largest accepted request body in bytes                                    |
+| `FORWARDED_ALLOW_IPS`       | `127.0.0.1`              | Reverse proxies to trust for X-Forwarded-* headers                        |
 
 ## Development
 
@@ -65,7 +67,7 @@ npm run dev
 port 8000, reloading when Python files change. Open the Vite URL; it proxies `/api` to FastAPI,
 so the browser sees one origin, as in production. Run either side alone with `npm run dev:web`
 (point it at another API with `API_URL`) or `npm run dev:api`. FastAPI's interactive API docs
-are at http://localhost:5173/api/docs.
+are at http://localhost:5173/api/docs (development only; set `API_DOCS=true` to enable them elsewhere).
 
 In production there is one process: `npm run build` writes the SPA to `build/`, and
 `npm start` runs FastAPI, which serves `/api/*`, the built assets, and `index.html` for every
@@ -158,7 +160,8 @@ as `https://writing.example.com`. Direct local HTTP uses
 `ORIGIN=http://localhost:3000`. The API refuses writes whose `Origin` header doesn't match.
 Without `ORIGIN`, it compares against the request's `Host` header instead.
 
-Set `FORWARDED_ALLOW_IPS` to the proxy's address (for example the Docker network range) so
+Set `FORWARDED_ALLOW_IPS` to the proxy's address or range (for example `172.16.0.0/12` for a
+proxy on a Docker network; never `*`, which lets any client spoof its IP) so
 uvicorn trusts its `X-Forwarded-For` and `X-Forwarded-Proto` headers. Those feed the login
 throttle and decide whether the session cookie is marked `Secure`.
 

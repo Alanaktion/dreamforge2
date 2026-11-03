@@ -88,22 +88,23 @@ def list_projects(db: Session, user_id: str) -> dict[str, list[dict]]:
     pins = pinned_project_ids(db, user_id)
     owned = list(db.exec(select(Project).where(Project.user_id == user_id)).all())
     owned_ids = {p.id for p in owned}
-    shared = [
-        p
-        for p in db.exec(
-            select(Project)
-            .join(ProjectMember, col(ProjectMember.project_id) == Project.id)
-            .where(ProjectMember.user_id == user_id)
-        ).all()
-        if p.id not in owned_ids
-    ]
+    roles: dict[str, ProjectRole] = {p.id: "owner" for p in owned}
+    shared: list[Project] = []
+    for project, role in db.exec(
+        select(Project, ProjectMember.role)
+        .join(ProjectMember, col(ProjectMember.project_id) == Project.id)
+        .where(ProjectMember.user_id == user_id)
+    ).all():
+        if project.id not in owned_ids:
+            shared.append(project)
+            roles[project.id] = role  # type: ignore[assignment]
 
-    def ordered(items: list[Project], role: ProjectRole) -> list[dict]:
+    def ordered(items: list[Project]) -> list[dict]:
         items.sort(key=lambda p: p.modified_at, reverse=True)
         items.sort(key=lambda p: p.id not in pins)  # stable sort: pinned first
-        return [project_out(p, pinned=p.id in pins, role=role) for p in items]
+        return [project_out(p, pinned=p.id in pins, role=roles[p.id]) for p in items]
 
-    return {"projects": ordered(owned, "owner"), "shared_projects": ordered(shared, "editor")}
+    return {"projects": ordered(owned), "shared_projects": ordered(shared)}
 
 
 def create_project(db: Session, user_id: str, name: str, description: str | None) -> Project:
@@ -176,8 +177,8 @@ def delete_project(db: Session, project: Project) -> None:
     db.delete(project)
     db.commit()
     data_dir = get_settings().data_dir.resolve()
-    # Only remove what is plainly a project folder, never something like "/" from a bad row.
-    if path.exists() and (path.resolve().parent == data_dir or (path / "project.json").exists()):
+    # Only remove a folder directly inside DATA_DIR, never something like "/" from a bad row.
+    if path.exists() and path.resolve().parent == data_dir:
         shutil.rmtree(path, ignore_errors=True)
 
 

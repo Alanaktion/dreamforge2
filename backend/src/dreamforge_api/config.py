@@ -17,6 +17,8 @@ class Settings:
     allow_registration_env: bool
     origins: frozenset[str]
     frontend_dir: Path
+    api_docs: bool
+    body_size_limit: int
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -35,6 +37,9 @@ class Settings:
                 o.strip().rstrip("/") for o in os.environ.get("ORIGIN", "").split(",") if o.strip()
             ),
             # The SvelteKit static build. Defaults to <repo>/build when run from a checkout.
+            # Interactive docs at /api/docs. On in development (scripts/run.js), off otherwise.
+            api_docs=os.environ.get("API_DOCS") == "true",
+            body_size_limit=int(os.environ.get("BODY_SIZE_LIMIT") or 20 * 1024 * 1024),
             frontend_dir=Path(os.environ.get("FRONTEND_DIR") or REPO_ROOT / "build").resolve(),
         )
 
