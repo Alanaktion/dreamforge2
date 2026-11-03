@@ -28,6 +28,9 @@
       await invalidateAll();
     } catch (cause) {
       error = cause instanceof ApiError ? cause.message : 'Could not reach the server. Try again.';
+      // Gone already (deleted elsewhere, or its file was missing and the row was dropped):
+      // reload so the list matches the server. The message above stays.
+      if (cause instanceof ApiError && cause.status === 404) await invalidateAll().catch(() => {});
     } finally {
       busy = null;
     }
