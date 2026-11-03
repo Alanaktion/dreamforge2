@@ -22,7 +22,15 @@ from sqlalchemy import delete
 from sqlmodel import Session, col, select
 
 from ..markdown import read_markdown_file
-from ..models import Bookmark, ImageEntityLink, Project, ProjectImage, TrashItem, User
+from ..models import (
+    Bookmark,
+    Entity,
+    ImageEntityLink,
+    Project,
+    ProjectImage,
+    TrashItem,
+    User,
+)
 from ..storage import project_lock
 from ..utils import generate_id, is_safe_path_segment, iso_now
 from . import stories
@@ -286,6 +294,48 @@ def soft_delete_scene(
         return undo.run(db, project, change)
 
 
+def soft_delete_image(db: Session, project: Project, image_id: str) -> dict[str, Any] | None:
+    """Move the image file to the trash and drop its row and entity links. The links are
+    kept in the trash row so a restore brings them back."""
+    base = project_path(project)
+    undo = _Undo(base)
+
+    def change() -> dict[str, Any] | None:
+        row = db.get(ProjectImage, image_id)
+        if row is None or row.project_id != project.id:
+            return None
+        source = base / "images" / row.filename
+        if is_safe_path_segment(row.filename) and source.is_file():
+            target = _image_trash(base, row.filename)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            undo.move(source, target)
+        links = db.exec(
+            select(ImageEntityLink).where(
+                ImageEntityLink.image_id == image_id, ImageEntityLink.project_id == project.id
+            )
+        ).all()
+        stash = {
+            "filename": row.filename,
+            "originalName": row.original_name,
+            "mimeType": row.mime_type,
+            "size": row.size,
+            "caption": row.caption,
+            "altText": row.alt_text,
+            "createdAt": row.created_at,
+            "entityLinks": [{"id": link.id, "entityId": link.entity_id} for link in links],
+        }
+        for link in links:
+            db.delete(link)
+        db.delete(row)
+        db.flush()  # the links go before the image they reference
+        return _add_item(
+            db, project, image_id, "image", f"images/{row.filename}", row.original_name, stash
+        )
+
+    with project_lock(project.id):
+        return undo.run(db, project, change)
+
+
 def _stash(item: TrashItem) -> dict[str, Any]:
     try:
         value = json.loads(item.metadata_) if item.metadata_ else {}
@@ -457,9 +507,21 @@ def _restore_image(db: Session, project: Project, base, item: TrashItem, undo: _
             size=meta.get("size") or 0,
             caption=meta.get("caption") or None,
             alt_text=meta.get("altText") or None,
-            created_at=item.deleted_at,
+            created_at=meta.get("createdAt") or item.deleted_at,
         )
     )
+    db.flush()  # the image row before the links that reference it
+    for link in meta.get("entityLinks") or []:
+        entity = db.get(Entity, (link.get("entityId"), project.id))
+        if entity is not None and db.get(ImageEntityLink, link.get("id")) is None:
+            db.add(
+                ImageEntityLink(
+                    id=link["id"],
+                    image_id=item.entity_id,
+                    entity_id=link["entityId"],
+                    project_id=project.id,
+                )
+            )
     _drop(db, item)
     return True
 

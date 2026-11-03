@@ -25,9 +25,11 @@ from .routers import (
     dashboard,
     entities,
     health,
+    images,
     invites,
     plots,
     projects,
+    search,
     stories,
     timelines,
     trash,
@@ -156,6 +158,8 @@ def create_app() -> FastAPI:
         plots,
         timelines,
         dashboard,
+        images,
+        search,
         trash,
     ):
         app.include_router(module.router, prefix="/api")

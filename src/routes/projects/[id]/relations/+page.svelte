@@ -1,6 +1,9 @@
 <script lang="ts">
   import { page } from '$app/state';
-  import { enhance } from '$app/forms';
+  import { invalidateAll } from '$app/navigation';
+  import { api, ApiError } from '$lib/api';
+  import type { EntitySummary } from '$lib/api/entities';
+  import type { Relation } from './+page';
   import { Plus, Trash2, Share2 } from '@lucide/svelte';
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
@@ -23,8 +26,50 @@
   let relationType = $state('related_to');
   let label = $state('');
 
+  let error = $state<string | null>(null);
+  let projectId = $derived(page.params.id ?? '');
+  let readOnly = $derived(page.data?.role === 'commenter');
+  let entities = $derived((page.data?.entities ?? []) as EntitySummary[]);
+  let relations = $derived((page.data?.relations ?? []) as Relation[]);
+  let byId = $derived(new Map(entities.map((e) => [e.id, e])));
+
+  async function run(change: () => Promise<unknown>): Promise<boolean> {
+    let ok = false;
+    try {
+      await change();
+      error = null;
+      ok = true;
+    } catch (cause) {
+      error = cause instanceof ApiError ? cause.message : 'Could not reach the server. Try again.';
+    }
+    await invalidateAll().catch(() => {});
+    return ok;
+  }
+
+  async function create(event: SubmitEvent) {
+    event.preventDefault();
+    if (!sourceId || !targetId) {
+      error = 'Pick both entities.';
+      return;
+    }
+    const body = { sourceId, targetId, relationType, label };
+    if (await run(() => api(`/api/projects/${projectId}/relations`, { method: 'POST', body }))) {
+      showCreate = false;
+      sourceId = targetId = label = '';
+      relationType = 'related_to';
+    }
+  }
+
+  function remove(relationId: string) {
+    return run(() =>
+      api(`/api/projects/${projectId}/relations/${encodeURIComponent(relationId)}`, {
+        method: 'DELETE'
+      })
+    );
+  }
+
   let entityOptions = $derived(
-    (page.data?.entities || []).map((e: any) => ({
+    entities.map((e) => ({
       value: e.id,
       label: e.name,
       group: e.type as string,
@@ -43,44 +88,28 @@
       <h1 class="text-2xl font-bold">Relations</h1>
       <p class="text-sm text-muted-foreground">{page.data?.projectName || 'Project'}</p>
     </div>
-    <Button onclick={() => (showCreate = !showCreate)}>
-      <Plus class="h-4 w-4" /> Add Relation
-    </Button>
+    {#if !readOnly}
+      <Button onclick={() => (showCreate = !showCreate)}>
+        <Plus class="h-4 w-4" /> Add Relation
+      </Button>
+    {/if}
   </div>
+
+  {#if error}
+    <p class="mb-4 text-sm text-destructive" role="alert">{error}</p>
+  {/if}
 
   {#if showCreate}
     <div class="mb-6 rounded-lg border border-border bg-card p-4">
-      <form
-        method="POST"
-        action="?/create"
-        use:enhance={() => {
-          return async ({ result, update }) => {
-            if (result.type === 'success') {
-              showCreate = false;
-              await update();
-            }
-          };
-        }}
-        class="space-y-3"
-      >
+      <form onsubmit={create} class="space-y-3">
         <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div class="space-y-1.5">
             <Label for="sourceId">Source Entity</Label>
-            <ComboboxRich
-              name="sourceId"
-              bind:value={sourceId}
-              options={entityOptions}
-              placeholder="Select..."
-            />
+            <ComboboxRich bind:value={sourceId} options={entityOptions} placeholder="Select..." />
           </div>
           <div class="space-y-1.5">
             <Label for="targetId">Target Entity</Label>
-            <ComboboxRich
-              name="targetId"
-              bind:value={targetId}
-              options={entityOptions}
-              placeholder="Select..."
-            />
+            <ComboboxRich bind:value={targetId} options={entityOptions} placeholder="Select..." />
           </div>
         </div>
         <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -96,11 +125,10 @@
                 {/each}
               </SelectContent>
             </Select>
-            <input type="hidden" name="relationType" value={relationType} />
           </div>
           <div class="space-y-1.5">
             <Label for="label">Label (optional)</Label>
-            <Input id="label" name="label" type="text" bind:value={label} />
+            <Input id="label" type="text" bind:value={label} />
           </div>
         </div>
         <div class="flex gap-2">
@@ -113,18 +141,13 @@
     </div>
   {/if}
 
-  <RelationGraph
-    class="mb-4"
-    entities={page.data?.entities || []}
-    relations={page.data?.relations || []}
-    projectId={page.params.id || ''}
-  />
+  <RelationGraph class="mb-4" {entities} {relations} projectId={page.params.id || ''} />
 
   <h2 class="sr-only">Relation list</h2>
   <ul class="space-y-2" aria-label="Relations">
-    {#each page.data?.relations || [] as rel (rel.id)}
-      {@const source = (page.data?.entities || []).find((e: any) => e.id === rel.sourceId)}
-      {@const target = (page.data?.entities || []).find((e: any) => e.id === rel.targetId)}
+    {#each relations as rel (rel.id)}
+      {@const source = byId.get(rel.sourceId)}
+      {@const target = byId.get(rel.targetId)}
       <li
         class="flex items-center justify-between rounded-lg border border-border bg-card px-4 py-3"
       >
@@ -150,22 +173,21 @@
             <span class="font-medium">{rel.targetId}</span>
           {/if}
         </div>
-        <form method="POST" action="?/delete">
-          <input type="hidden" name="relId" value={rel.id} />
+        {#if !readOnly}
           <Button
-            type="submit"
             variant="ghost"
             size="icon-sm"
+            onclick={() => remove(rel.id)}
             aria-label="Delete relation {source?.name ?? rel.sourceId} {rel.label ||
               relationLabel(rel.relationType)} {target?.name ?? rel.targetId}"
           >
             <Trash2 class="h-4 w-4 text-destructive" />
           </Button>
-        </form>
+        {/if}
       </li>
     {/each}
   </ul>
-  {#if (page.data?.relations || []).length === 0}
+  {#if relations.length === 0}
     <p class="py-12 text-center text-muted-foreground">
       No relations yet. Connect characters, places, and groups to see who is allied with whom, who
       belongs where, and who owes whom.

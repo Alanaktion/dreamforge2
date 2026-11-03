@@ -8,6 +8,7 @@
   import { Badge } from '$lib/components/ui/badge';
   import { Button } from '$lib/components/ui/button';
   import type { EntityType } from '$lib/types';
+  import { _MAX_QUERY } from './+page';
 
   interface Result {
     kind: 'entity' | 'scene';
@@ -88,6 +89,7 @@
       type="search"
       placeholder="Search entities, scenes, and summaries…"
       bind:value={query}
+      maxlength={_MAX_QUERY}
       oninput={onInput}
       autofocus
       class="w-full rounded-lg border border-input bg-background py-2.5 pl-9 pr-16 text-sm"

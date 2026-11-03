@@ -7,10 +7,10 @@ SvelteKit single-page frontend and a FastAPI (Python) backend.
 > (`backend/`). Sign-in, accounts, instance admin, invites, members, pins, the project list,
 > entities (with custom fields, relations, bookmarks, comments and the command palette),
 > stories (chapters, scenes, summaries, manuscript export, note and scene conversion), plotlines,
-> the timeline, the project dashboard, the daily writing goal and the trash page are on the new
-> backend. Images, search, the relations page, backups and import/export are not yet: those
-> pages show "Not available yet". The previous server code is kept under `legacy/routes/` and `src/lib/server/` as the
-> reference for porting.
+> the timeline, the project dashboard, the daily writing goal, images, search, the relations page
+> and the trash page are on the new backend. CSV import/export, backups and project ZIP
+> import/export are not yet: those pages show "Not available yet". The previous server code is
+> kept under `legacy/routes/` and `src/lib/server/` as the reference for porting.
 
 ## Quick Start (Docker)
 
@@ -145,6 +145,11 @@ will end up in your shell history.
 - Light / dark themes
 
 ## Backups and restore
+
+> **Not available during the backend rework.** The FastAPI backend does not run automatic
+> backups or ZIP import/export yet; they return in the next stage of the port. Until then, back
+> up the projects directory and the database file yourself. The description below is how they
+> work once ported.
 
 Automatic ZIP backups run every `BACKUP_INTERVAL` seconds (default 86400), retain
 `BACKUP_RETENTION` archives (default 10), and live in `BACKUP_DIR` (default a

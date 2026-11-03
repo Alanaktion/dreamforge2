@@ -25,6 +25,9 @@ SvelteKit frontend (`npm run dev`).
 - `services/plots.py` (`plotlines/<id>.json`) and `services/timelines.py` (`timeline.json`):
   file-only data, written under the project lock. `services/stats.py` walks the files once for
   the dashboard.
+- `services/images.py`: uploads (one file per request, checked against its signature), served
+  back at `/api/projects/{id}/images/{filename}` with SVGs sandboxed. `services/search.py`
+  searches the Markdown files directly.
 - `services/trash.py`: soft delete and restore for entities, stories, chapters, scenes and
   images, and the daily purge of items older than 30 days.
 
