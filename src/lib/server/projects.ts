@@ -11,7 +11,9 @@ import {
   customFieldDefs,
   projectMembers,
   trashItems,
-  entities
+  entities,
+  projectPins,
+  projectInvites
 } from './schema';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
@@ -102,6 +104,8 @@ export function deleteProject(projectId: string, dataPath: string): void {
     drizzleDb.delete(projectImages).where(eq(projectImages.projectId, projectId)).run();
     drizzleDb.delete(customFieldDefs).where(eq(customFieldDefs.projectId, projectId)).run();
     drizzleDb.delete(projectMembers).where(eq(projectMembers.projectId, projectId)).run();
+    drizzleDb.delete(projectPins).where(eq(projectPins.projectId, projectId)).run();
+    drizzleDb.delete(projectInvites).where(eq(projectInvites.projectId, projectId)).run();
     drizzleDb.delete(trashItems).where(eq(trashItems.projectId, projectId)).run();
     drizzleDb.delete(entities).where(eq(entities.projectId, projectId)).run();
     drizzleDb.delete(projects).where(eq(projects.id, projectId)).run();

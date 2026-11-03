@@ -12,7 +12,8 @@
     TriangleAlert,
     Target,
     Archive,
-    RefreshCw
+    RefreshCw,
+    Link2
   } from '@lucide/svelte';
   import { invalidateAll } from '$app/navigation';
   import type { EntityType } from '$lib/types';
@@ -502,6 +503,71 @@
         <p class="mt-2 text-xs text-muted-foreground">
           Editors can view and edit content. Commenters can view and leave comments.
         </p>
+      </div>
+
+      <div class="mt-6 border-t border-border pt-4">
+        <h3 class="mb-1 flex items-center gap-2 text-sm font-semibold">
+          <Link2 class="h-4 w-4" />
+          Invite links
+        </h3>
+        <p class="mb-3 text-xs text-muted-foreground">
+          Anyone with a link can join for 7 days, even if registration is closed. Revoke a link to
+          stop it working.
+        </p>
+        <form
+          method="POST"
+          action="?/createInvite"
+          use:enhance
+          class="flex flex-wrap items-end gap-2"
+        >
+          <label class="space-y-1 text-xs text-muted-foreground">
+            <span class="block">Role</span>
+            <select
+              name="role"
+              class="rounded-md border border-input bg-background px-2 py-1.5 text-sm text-foreground"
+            >
+              <option value="editor">Editor</option>
+              <option value="commenter">Commenter</option>
+            </select>
+          </label>
+          <Button type="submit" variant="outline">Create invite link</Button>
+        </form>
+        {#if (page.data?.invites ?? []).length > 0}
+          <ul class="mt-3 space-y-2">
+            {#each page.data.invites as invite (invite.token)}
+              {@const url = `${page.url.origin}/invite/${invite.token}`}
+              <li
+                class="flex flex-wrap items-center gap-2 rounded-md border border-border p-2 text-sm"
+              >
+                <span class="rounded bg-secondary px-1.5 py-0.5 text-xs capitalize"
+                  >{invite.role}</span
+                >
+                <input
+                  readonly
+                  value={url}
+                  aria-label="Invite link for {invite.role}s"
+                  class="min-w-0 flex-1 rounded border-0 bg-transparent font-mono text-xs"
+                  onfocus={(e) => (e.target as HTMLInputElement).select()}
+                />
+                <span class="text-xs text-muted-foreground"
+                  >expires {new Date(invite.expiresAt).toLocaleDateString()}</span
+                >
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="xs"
+                  onclick={() => navigator.clipboard?.writeText(url)}>Copy</Button
+                >
+                <form method="POST" action="?/revokeInvite" use:enhance>
+                  <input type="hidden" name="token" value={invite.token} />
+                  <Button type="submit" variant="ghost" size="xs" class="text-destructive"
+                    >Revoke</Button
+                  >
+                </form>
+              </li>
+            {/each}
+          </ul>
+        {/if}
       </div>
     </div>
 

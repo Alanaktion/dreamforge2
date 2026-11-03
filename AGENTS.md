@@ -140,6 +140,8 @@ Key: `PUBLIC_ALLOW_REGISTRATION` (default true — set to `false` to disable sig
 
 - Custom implementation in `src/lib/server/password.ts` using Node's `crypto.scrypt`
 - Sessions stored in SQLite `sessions` table
-- Admin user seeded automatically (email/password from env)
-- Registration toggle via `PUBLIC_ALLOW_REGISTRATION`
+- Admin user seeded automatically (email/password from env) with `users.is_admin`; admins manage users and registration at `/admin` (`src/lib/server/accounts.ts`)
+- Registration toggle via `PUBLIC_ALLOW_REGISTRATION`, overridable at runtime from `/admin` (stored in `instance_settings`)
+- Project invite links (`src/lib/server/invites.ts`) let people join a project for 7 days, even when registration is closed
+- Pins are per user (`project_pins`); `projects.pinned` is legacy and no longer read
 - Logout deletes session from DB and clears cookie

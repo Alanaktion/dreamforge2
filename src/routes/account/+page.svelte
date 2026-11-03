@@ -53,4 +53,44 @@
   {#if page.form?.error}<p role="alert">{page.form.error}</p>{/if}
   {#if page.form?.success}<p role="status">Account saved.</p>
     <a href="/projects">Continue to projects</a>{/if}
+
+  <section class="mt-8 space-y-3 rounded-lg border border-destructive/50 p-4">
+    <h2 class="text-lg font-semibold text-destructive">Delete account</h2>
+    {#if (page.data.ownedProjects ?? []).length > 0}
+      <p class="text-sm">
+        You own {page.data.ownedProjects.length}
+        {page.data.ownedProjects.length === 1 ? 'project' : 'projects'} ({page.data.ownedProjects.join(
+          ', '
+        )}). Export and delete them from their Settings pages before deleting your account.
+      </p>
+    {:else}
+      <p class="text-sm text-muted-foreground">
+        This removes your login, your memberships in shared projects, and your comments. It can't be
+        undone.
+      </p>
+      <form method="POST" action="?/delete" use:enhance class="grid gap-3">
+        <label
+          >Password <input
+            class="w-full rounded border p-2"
+            type="password"
+            name="password"
+            autocomplete="current-password"
+            required
+          /></label
+        >
+        <label
+          >Type DELETE to confirm <input
+            class="w-full rounded border p-2"
+            name="confirm"
+            autocomplete="off"
+            required
+          /></label
+        >
+        <Button type="submit" variant="destructive">Delete my account</Button>
+      </form>
+    {/if}
+    {#if page.form?.deleteError}<p role="alert" class="text-sm text-destructive">
+        {page.form.deleteError}
+      </p>{/if}
+  </section>
 </div>

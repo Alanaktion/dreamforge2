@@ -46,6 +46,64 @@
   </p>
 {/snippet}
 
+{#snippet projectCard(project: {
+  id: string;
+  name: string;
+  description: string | null;
+  pinned: boolean;
+  isOwner: boolean;
+  modifiedAt: string;
+  summary: { entityCount: number; storyCount: number; wordCount: number } | null;
+})}
+  <div
+    class={cn(
+      'flex items-center justify-between rounded-lg border border-border bg-card p-4',
+      project.pinned && 'border-primary/50'
+    )}
+  >
+    <div class="flex-1">
+      <div class="flex items-center gap-2">
+        {#if project.pinned}
+          <Pin class="h-3 w-3 text-primary" />
+        {/if}
+        <a href="/projects/{project.id}" class="font-semibold hover:underline">
+          {project.name}
+        </a>
+      </div>
+      {#if project.description}
+        <p class="mt-1 text-sm text-muted-foreground">{project.description}</p>
+      {/if}
+      {@render summaryLine(project)}
+    </div>
+    <div class="flex items-center gap-1">
+      <form method="POST" action="?/togglePin" use:enhance>
+        <input type="hidden" name="projectId" value={project.id} />
+        <Button
+          type="submit"
+          variant="ghost"
+          size="icon-sm"
+          aria-label={project.pinned ? `Unpin ${project.name}` : `Pin ${project.name}`}
+          title={project.pinned ? 'Unpin' : 'Pin to top'}
+        >
+          {#if project.pinned}
+            <PinOff class="h-4 w-4" />
+          {:else}
+            <Pin class="h-4 w-4" />
+          {/if}
+        </Button>
+      </form>
+      <Button
+        href="/projects/{project.id}"
+        variant="ghost"
+        size="icon-sm"
+        aria-label="Open {project.name}"
+      >
+        <ExternalLink class="h-4 w-4" />
+      </Button>
+    </div>
+  </div>
+{/snippet}
+
 <svelte:head>
   <title>Projects — DreamForge</title>
 </svelte:head>
@@ -184,80 +242,17 @@
     {/if}
 
     {#each page.data?.projects || [] as project (project.id)}
-      <div
-        class={cn(
-          'flex items-center justify-between rounded-lg border border-border bg-card p-4',
-          project.pinned && 'border-primary/50'
-        )}
-      >
-        <div class="flex-1">
-          <div class="flex items-center gap-2">
-            {#if project.pinned}
-              <Pin class="h-3 w-3 text-primary" />
-            {/if}
-            <a href="/projects/{project.id}" class="font-semibold hover:underline">
-              {project.name}
-            </a>
-          </div>
-          {#if project.description}
-            <p class="mt-1 text-sm text-muted-foreground">{project.description}</p>
-          {/if}
-          {@render summaryLine(project)}
-        </div>
-        <div class="flex items-center gap-1">
-          <form method="POST" action="?/togglePin">
-            <input type="hidden" name="projectId" value={project.id} />
-            <Button
-              type="submit"
-              variant="ghost"
-              size="icon-sm"
-              aria-label={project.pinned ? 'Unpin project' : 'Pin project'}
-            >
-              {#if project.pinned}
-                <PinOff class="h-4 w-4" />
-              {:else}
-                <Pin class="h-4 w-4" />
-              {/if}
-            </Button>
-          </form>
-          <Button
-            href="/projects/{project.id}"
-            variant="ghost"
-            size="icon-sm"
-            aria-label="Open project"
-          >
-            <ExternalLink class="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
+      {@render projectCard(project)}
     {/each}
 
     {#if (page.data?.sharedProjects?.length ?? 0) > 0}
       <div class="mt-6">
         <h2 class="mb-3 text-sm font-medium text-muted-foreground">Shared with me</h2>
-        {#each page.data.sharedProjects as project (project.id)}
-          <div
-            class="flex items-center justify-between rounded-lg border border-border bg-card p-4 mb-2"
-          >
-            <div class="flex-1">
-              <a href="/projects/{project.id}" class="font-semibold hover:underline">
-                {project.name}
-              </a>
-              {#if project.description}
-                <p class="mt-1 text-sm text-muted-foreground">{project.description}</p>
-              {/if}
-              {@render summaryLine(project)}
-            </div>
-            <Button
-              href="/projects/{project.id}"
-              variant="ghost"
-              size="icon-sm"
-              aria-label="Open project"
-            >
-              <ExternalLink class="h-4 w-4" />
-            </Button>
-          </div>
-        {/each}
+        <div class="space-y-3">
+          {#each page.data.sharedProjects as project (project.id)}
+            {@render projectCard(project)}
+          {/each}
+        </div>
       </div>
     {/if}
   </div>

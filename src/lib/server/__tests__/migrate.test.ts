@@ -16,7 +16,7 @@ it('upgrades a legacy entity table without losing rows and allows project-scoped
   `);
   migrate();
   migrate();
-  expect(testDb.pragma('user_version', { simple: true })).toBe(2);
+  expect(testDb.pragma('user_version', { simple: true })).toBe(3);
   expect(testDb.prepare('SELECT name FROM entities WHERE project_id = ?').get('a')).toEqual({
     name: 'Original'
   });

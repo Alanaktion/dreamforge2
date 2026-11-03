@@ -18,6 +18,7 @@ import {
 import { updateProject, deleteProject } from '$lib/server/projects';
 import { readWritingLog, setDailyGoal } from '$lib/server/writingLog';
 import type { EntityType } from '$lib/types';
+import { createInvite, listInvites, revokeInvite } from '$lib/server/invites';
 import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ params, locals }) => {
@@ -37,12 +38,29 @@ export const load: PageServerLoad = async ({ params, locals }) => {
     backups: role === 'owner' ? listBackups(params.id) : [],
     backupEnabled: backupSettings(project.dataPath).enabled,
     members,
+    invites: role === 'owner' ? listInvites(params.id) : [],
     dailyGoal: readWritingLog(project.dataPath).dailyGoal,
     role
   };
 };
 
 export const actions = {
+  createInvite: async ({ params, locals, request }) => {
+    if (!locals.user) return fail(401, { error: 'Unauthorized' });
+    const access = getProjectAccess(params.id, locals.user.id);
+    if (access?.role !== 'owner') return fail(403, { error: 'Only the owner can invite people' });
+    const role = (await request.formData()).get('role');
+    if (role !== 'editor' && role !== 'commenter') return fail(400, { error: 'Choose a role' });
+    createInvite(params.id, locals.user.id, role);
+    return { success: true };
+  },
+  revokeInvite: async ({ params, locals, request }) => {
+    if (!locals.user) return fail(401, { error: 'Unauthorized' });
+    const access = getProjectAccess(params.id, locals.user.id);
+    if (access?.role !== 'owner') return fail(403, { error: 'Only the owner can revoke invites' });
+    revokeInvite(params.id, String((await request.formData()).get('token') || ''));
+    return { success: true };
+  },
   backup: async ({ params, locals }) => {
     if (!locals.user) return fail(401, { error: 'Unauthorized' });
     const access = getProjectAccess(params.id, locals.user.id);

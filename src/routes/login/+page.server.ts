@@ -5,7 +5,7 @@ import db from '$lib/server/db';
 import { users, sessions } from '$lib/server/schema';
 import { eq, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
-import { generateId } from '$lib/utils';
+import { generateId, safeNext } from '$lib/utils';
 
 const drizzleDb = drizzle(db);
 
@@ -37,6 +37,9 @@ export const actions = {
     if (!valid) {
       return fail(400, { error: 'Invalid email or password' });
     }
+    if (user.disabled) {
+      return fail(403, { error: 'This account is disabled. Ask an administrator for help.' });
+    }
 
     const oldSession = cookies.get('dreamforge-session');
     if (oldSession) drizzleDb.delete(sessions).where(eq(sessions.id, oldSession)).run();
@@ -60,6 +63,6 @@ export const actions = {
       maxAge: 60 * 60 * 24 * 30
     });
 
-    throw redirect(302, '/projects');
+    throw redirect(302, safeNext(form.get('next')));
   }
 };

@@ -2,8 +2,9 @@ import { test, expect, type Page } from '@playwright/test';
 
 const password = 'Smoke-updated-password';
 async function showChapters(page: Page) {
-  const back = page.getByRole('button', { name: 'Back to chapters' });
-  if (await back.isVisible()) await back.click();
+  const phone = (page.viewportSize()?.width ?? 1024) < 768;
+  if (phone && page.url().includes('scene='))
+    await page.getByRole('button', { name: 'Back to chapters' }).click();
 }
 
 test('production login, awkward entities, autosave, relations and project ZIP restore', async ({
@@ -144,5 +145,49 @@ test('production login, awkward entities, autosave, relations and project ZIP re
   await expect(
     page.getByRole('link', { name: `Smoke ${testInfo.project.name}`, exact: true })
   ).toHaveCount(2);
+  expect(errors).toEqual([]);
+});
+
+test('invite links, instance admin, and per-member pins', async ({ page, browser }, testInfo) => {
+  const errors: string[] = [];
+  page.on('pageerror', (cause) => errors.push(cause.message));
+  await page.goto('/login');
+  await page.getByLabel('Email').fill('smoke@example.test');
+  await page.getByLabel('Password', { exact: true }).fill(password);
+  await page.getByRole('button', { name: 'Log In', exact: true }).click();
+  await expect(page).toHaveURL(/\/projects$/);
+
+  await page.goto('/admin');
+  await expect(page.getByRole('heading', { name: 'Instance admin' })).toBeVisible();
+  await expect(page.getByText('smoke@example.test')).toBeVisible();
+
+  await page.goto('/projects');
+  await page.getByRole('button', { name: 'New Project', exact: true }).first().click();
+  await page.getByLabel('Project Name').fill(`Shared ${testInfo.project.name}`);
+  await page.getByRole('button', { name: 'Create', exact: true }).click();
+  await expect(page).toHaveURL(/\/projects\/[^/]+$/);
+  await page.goto(`${new URL(page.url()).pathname}/settings`);
+  await page.getByRole('button', { name: 'Create invite link' }).click();
+  const link = await page.getByRole('textbox', { name: /Invite link/ }).inputValue();
+  expect(link).toContain('/invite/');
+
+  const guest = await browser.newContext();
+  const other = await guest.newPage();
+  other.on('pageerror', (cause) => errors.push(cause.message));
+  await other.goto(link);
+  await other.getByRole('link', { name: 'Create an account' }).click();
+  const name = `guest${testInfo.project.name}${Date.now()}`;
+  await other.getByLabel('Email').fill(`${name}@example.test`);
+  await other.getByLabel('Username').fill(name);
+  await other.getByLabel('Password').fill('Guest-password-1');
+  await other.getByRole('button', { name: /Register|Create/ }).click();
+  await other.getByRole('button', { name: 'Join project' }).click();
+  await expect(other).toHaveURL(/\/projects\/[^/]+$/);
+  await other.goto('/projects');
+  await other.getByRole('button', { name: `Pin Shared ${testInfo.project.name}` }).click();
+  await expect(
+    other.getByRole('button', { name: `Unpin Shared ${testInfo.project.name}` })
+  ).toBeVisible();
+  await guest.close();
   expect(errors).toEqual([]);
 });

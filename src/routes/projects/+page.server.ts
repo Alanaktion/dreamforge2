@@ -5,9 +5,10 @@ import { writeFileAtomic } from '$lib/server/storage';
 import { fail, redirect } from '@sveltejs/kit';
 import db from '$lib/server/db';
 import { projects } from '$lib/server/schema';
-import { eq, desc, and } from 'drizzle-orm';
+import { eq, desc } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
-import { getMemberProjects } from '$lib/server/members';
+import { getMemberProjects, getProjectAccess } from '$lib/server/members';
+import { pinnedProjectIds, togglePin } from '$lib/server/pins';
 import { resolveProjectPath } from '$lib/server/paths';
 import { createProject } from '$lib/server/projects';
 import {
@@ -33,8 +34,11 @@ export const load: PageServerLoad = async ({ locals }) => {
     .select()
     .from(projects)
     .where(eq(projects.userId, locals.user.id))
-    .orderBy(desc(projects.pinned), desc(projects.modifiedAt))
+    .orderBy(desc(projects.modifiedAt))
     .all();
+  const pins = pinnedProjectIds(locals.user.id);
+  const byPinThenActivity = (a: { id: string; modifiedAt: string }, b: typeof a) =>
+    Number(pins.has(b.id)) - Number(pins.has(a.id)) || (a.modifiedAt < b.modifiedAt ? 1 : -1);
 
   const memberProjects = getMemberProjects(locals.user.id);
 
@@ -51,12 +55,12 @@ export const load: PageServerLoad = async ({ locals }) => {
 
   return {
     presets: PROJECT_PRESETS,
-    projects: ownedProjects.map((p) =>
-      withSummary({ ...p, pinned: Boolean(p.pinned), isOwner: true })
-    ),
+    projects: ownedProjects
+      .sort(byPinThenActivity)
+      .map((p) => withSummary({ ...p, pinned: pins.has(p.id), isOwner: true })),
     sharedProjects: sharedProjects
-      .sort((a, b) => (a.modifiedAt < b.modifiedAt ? 1 : -1))
-      .map((p) => withSummary({ ...p, pinned: Boolean(p.pinned), isOwner: false }))
+      .sort(byPinThenActivity)
+      .map((p) => withSummary({ ...p, pinned: pins.has(p.id), isOwner: false }))
   };
 };
 
@@ -109,22 +113,11 @@ export const actions = {
     if (!locals.user) return fail(401, { error: 'Unauthorized' });
 
     const form = await request.formData();
-    const projectId = form.get('projectId') as string;
+    const projectId = String(form.get('projectId') || '');
+    if (!getProjectAccess(projectId, locals.user.id))
+      return fail(404, { error: 'Project not found' });
 
-    const project = drizzleDb
-      .select()
-      .from(projects)
-      .where(and(eq(projects.id, projectId), eq(projects.userId, locals.user.id)))
-      .get();
-
-    if (!project) return fail(404, { error: 'Project not found' });
-
-    drizzleDb
-      .update(projects)
-      .set({ pinned: !project.pinned })
-      .where(eq(projects.id, projectId))
-      .run();
-
+    togglePin(locals.user.id, projectId);
     return { success: true };
   }
 };

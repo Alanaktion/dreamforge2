@@ -6,22 +6,29 @@ import { eq, or, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { generateId } from '$lib/utils';
 import { registrationAllowed } from '$lib/server/registration';
+import { findInvite } from '$lib/server/invites';
 import type { PageServerLoad } from './$types';
 
 const drizzleDb = drizzle(db);
 
-export const load: PageServerLoad = async () => {
-  if (!registrationAllowed()) throw redirect(302, '/login');
-  return {};
+function inviteToken(value: unknown): string | null {
+  return typeof value === 'string' && value && findInvite(value) ? value : null;
+}
+
+export const load: PageServerLoad = async ({ url }) => {
+  const invite = inviteToken(url.searchParams.get('invite'));
+  if (!registrationAllowed() && !invite) throw redirect(302, '/login');
+  return { invite };
 };
 
 export const actions = {
   register: async ({ request, cookies, url }) => {
-    if (!registrationAllowed()) {
+    const form = await request.formData();
+    const invite = inviteToken(form.get('invite'));
+    if (!registrationAllowed() && !invite) {
       return fail(403, { error: 'Registration is disabled' });
     }
 
-    const form = await request.formData();
     const email = String(form.get('email') || '')
       .trim()
       .toLowerCase();
@@ -80,6 +87,6 @@ export const actions = {
       maxAge: 60 * 60 * 24 * 30
     });
 
-    throw redirect(302, '/projects');
+    throw redirect(302, invite ? `/invite/${invite}` : '/projects');
   }
 };
