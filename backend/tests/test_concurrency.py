@@ -61,3 +61,20 @@ def test_expired_session_on_a_get_is_cleaned_up_without_conflict(admin):
         assert resolve_session(reader, token) is None
     with Session(get_engine()) as db:
         assert db.get(LoginSession, token) is None
+
+
+def test_concurrent_relation_writes_are_not_lost(tmp_path):
+    """FastAPI runs sync endpoints on a thread pool; relations.json read-modify-writes must
+    not overwrite each other (the old server relied on Node's single thread for this)."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    from dreamforge_api.services.relations import add_relation, load_relations
+
+    (tmp_path / "relations.json").write_text("[]")
+
+    def add(i: int) -> None:
+        add_relation("p1", tmp_path, f"s{i}", f"t{i}", "friend", None)
+
+    with ThreadPoolExecutor(max_workers=16) as pool:
+        list(pool.map(add, range(200)))
+    assert len(load_relations(tmp_path)) == 200

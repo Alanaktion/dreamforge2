@@ -1,7 +1,9 @@
 <script lang="ts">
   import { onMount, tick, untrack } from 'svelte';
   import { page } from '$app/state';
-  import { enhance, deserialize } from '$app/forms';
+  import { api, ApiError } from '$lib/api';
+  import { deleteEntity, entityPath, splitList, type FieldValue } from '$lib/api/entities';
+  import NotPorted from '$lib/components/NotPorted.svelte';
   import { beforeNavigate, goto, invalidateAll } from '$app/navigation';
   import { ENTITY_LABELS, ENTITY_PLURAL, type FieldDef } from '$lib/entityFields';
   import { entityTypeToRoute } from '$lib/utils/entityTypes';
@@ -19,7 +21,6 @@
     BookmarkMinus,
     SwitchCamera,
     Link2,
-    Unlink,
     ImagePlus,
     FileText,
     Copy,
@@ -146,7 +147,6 @@
   let showConvert = $state(false);
   let convertStoryId = $state('');
   let convertChapterId = $state('');
-  let selectedImageId = $state('');
 
   let values = $state<Values>(untrack(() => snapshot()));
   let synced = $state<Values>(untrack(() => snapshot()));
@@ -244,33 +244,29 @@
     saveStatus = 'saving';
     saveError = '';
     try {
-      const body = new URLSearchParams();
-      body.set('revision', revision);
-      if (overwrite) body.set('overwrite', 'true');
+      const fields: Record<string, FieldValue> = {};
+      let bodyText: string | undefined;
       for (const [key, value] of Object.entries(payload)) {
-        const def = fieldDefs.find((f) => f.key === key);
-        if (def?.type === 'boolean') {
-          if (value !== synced[key]) body.set(key, value);
-          continue;
-        }
-        if (value !== synced[key]) body.set(key, value);
+        if (value === synced[key]) continue;
+        const type = key === 'tags' ? 'tags' : fieldDefs.find((f) => f.key === key)?.type;
+        if (key === 'body') bodyText = value;
+        else if (type === 'boolean') fields[key] = value === 'true' || value === 'on';
+        else if (type === 'tags') fields[key] = splitList(value);
+        else fields[key] = value;
       }
-      const res = await fetch(`${page.url.pathname}?/update`, {
-        method: 'POST',
-        headers: { 'x-sveltekit-action': 'true' },
-        body,
+      // fetch, not api(): keepalive lets a save finish while the tab closes.
+      const res = await fetch(entityPath(page.params.id!, entityType, page.params.entityId!), {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ fields, body: bodyText, revision, overwrite }),
         keepalive
       });
-      const result = deserialize(await res.text());
-      if (result.type !== 'success') {
-        if (result.type === 'failure' && result.status === 409) conflict = true;
-        throw new Error(
-          result.type === 'failure'
-            ? (result.data as { error?: string } | undefined)?.error || 'Save failed'
-            : 'Save failed'
-        );
+      const result = await res.json().catch(() => null);
+      if (!res.ok) {
+        if (res.status === 409) conflict = true;
+        throw new Error(typeof result?.detail === 'string' ? result.detail : 'Save failed');
       }
-      revision = (result.data as { revision?: string })?.revision ?? revision;
+      revision = result?.revision ?? revision;
       conflict = false;
       synced = payload;
       saveStatus = 'saved';
@@ -323,6 +319,75 @@
   $effect(() => {
     if (convertStoryId) convertChapterId = '';
   });
+
+  let entityType = $derived((page.data?.entityType || 'character') as EntityType);
+  let actionError = $state('');
+
+  async function act(run: () => Promise<unknown>) {
+    actionError = '';
+    try {
+      await run();
+    } catch (cause) {
+      actionError = cause instanceof ApiError ? cause.message : 'Something went wrong. Try again.';
+    }
+  }
+
+  const here = () => entityPath(page.params.id!, entityType, page.params.entityId!);
+
+  function toggleBookmark() {
+    return act(async () => {
+      await api(`${here()}/bookmark`, { method: 'POST' });
+      await invalidateAll();
+    });
+  }
+
+  function duplicate() {
+    return act(async () => {
+      await save();
+      const copy = await api<{ id: string }>(`${here()}/duplicate`, { method: 'POST' });
+      goto(`/projects/${page.params.id}/${entityTypeToRoute(entityType)}/${copy.id}`);
+    });
+  }
+
+  function remove() {
+    return act(async () => {
+      await deleteEntity(page.params.id!, entityType, page.params.entityId!);
+      synced = { ...values };
+      goto(`/projects/${page.params.id}/${entityTypeToRoute(entityType)}`);
+    });
+  }
+
+  function removeRelation(relationId: string) {
+    return act(async () => {
+      await api(`/api/projects/${page.params.id}/relations/${encodeURIComponent(relationId)}`, {
+        method: 'DELETE'
+      });
+      await invalidateAll();
+    });
+  }
+
+  function submitRelation(event: SubmitEvent) {
+    event.preventDefault();
+    keepRelationFormOpen = event.submitter?.getAttribute('name') === 'another';
+    return act(async () => {
+      await api(`/api/projects/${page.params.id}/relations`, {
+        method: 'POST',
+        body: {
+          sourceId: page.params.entityId,
+          targetId: relationTarget[0] || '',
+          newName: newTarget?.name ?? '',
+          newType: newTarget?.type ?? '',
+          relationType: relationTypeValue,
+          label: relationLabelText
+        }
+      });
+      addingRelation = keepRelationFormOpen;
+      relationTarget = [];
+      newTarget = null;
+      relationLabelText = '';
+      await invalidateAll();
+    });
+  }
 </script>
 
 <svelte:window onkeydown={handleKeydown} />
@@ -443,40 +508,35 @@
             {/if}
           </span>
         {/if}
-        {#if canEdit && page.data?.entityType === 'note'}
+        <!-- Convert to Scene waits for stories to move to the API (legacy convertToScene). -->
+        {#if canEdit && page.data?.entityType === 'note' && page.data?.stories?.length}
           <Button variant="outline" onclick={() => (showConvert = !showConvert)}>
             <SwitchCamera class="h-4 w-4" />
             Convert to Scene
           </Button>
         {/if}
-        <form method="POST" action="?/toggleBookmark" use:enhance>
-          <Button type="submit" variant="outline">
-            {#if page.data?.bookmarked}
-              <BookmarkMinus class="h-4 w-4" />
-              Unbookmark
-            {:else}
-              <Bookmark class="h-4 w-4" />
-              Bookmark
-            {/if}
-          </Button>
-        </form>
+        <Button variant="outline" onclick={toggleBookmark}>
+          {#if page.data?.bookmarked}
+            <BookmarkMinus class="h-4 w-4" />
+            Unbookmark
+          {:else}
+            <Bookmark class="h-4 w-4" />
+            Bookmark
+          {/if}
+        </Button>
         {#if canEdit}
-          <form
-            method="POST"
-            action="?/duplicate"
-            use:enhance={async () => {
-              await save();
-            }}
-          >
-            <Button type="submit" variant="outline" title="Duplicate this entity">
-              <Copy class="h-4 w-4" />
-              Duplicate
-            </Button>
-          </form>
+          <Button variant="outline" title="Duplicate this entity" onclick={duplicate}>
+            <Copy class="h-4 w-4" />
+            Duplicate
+          </Button>
         {/if}
       </div>
     </div>
   </div>
+
+  {#if actionError}
+    <p class="mb-4 text-sm text-destructive" role="alert">{actionError}</p>
+  {/if}
 
   <div class="space-y-6">
     <div class="rounded-lg border border-border bg-card p-4">
@@ -592,73 +652,8 @@
           </a>
         {/if}
       </div>
-      {#if (page.data?.entityImages || []).length === 0}
-        <p class="py-2 text-xs text-muted-foreground">No images linked to this entity.</p>
-      {:else}
-        <div class="flex flex-wrap gap-2">
-          {#each page.data.entityImages as img (img.id)}
-            <div class="group relative">
-              <a href="/projects/{page.params.id}/images/{img.id}" class="block">
-                <img
-                  src={img.url}
-                  alt={img.altText || img.originalName}
-                  class="h-20 w-20 rounded-lg border border-border object-cover"
-                />
-              </a>
-              {#if canEdit}
-                <Button
-                  variant="destructive"
-                  size="icon-xs"
-                  class="absolute -right-1.5 -top-1.5 rounded-full opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
-                  onclick={() =>
-                    fetch(`${page.url.pathname}?/unlinkImage`, {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                      body: new URLSearchParams({ imageId: img.id })
-                    }).then(() => invalidateAll())}
-                  aria-label="Unlink image"
-                >
-                  <Unlink class="h-3 w-3" />
-                </Button>
-              {/if}
-            </div>
-          {/each}
-        </div>
-      {/if}
-      {#if canEdit}
-        <div class="mt-3 flex gap-2">
-          <Combobox
-            bind:value={selectedImageId}
-            options={(page.data?.projectImages || [])
-              .filter(
-                (img: any) => !(page.data?.entityImages || []).some((ei: any) => ei.id === img.id)
-              )
-              .map((img: any) => ({
-                value: img.id,
-                label: img.originalName
-              }))}
-            placeholder="Select an image..."
-            class="flex-1"
-          />
-          <Button
-            size="sm"
-            onclick={() => {
-              if (!selectedImageId) return;
-              fetch(`${page.url.pathname}?/linkImage`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: new URLSearchParams({ imageId: selectedImageId })
-              }).then(() => {
-                selectedImageId = '';
-                return invalidateAll();
-              });
-            }}
-          >
-            <Link2 class="h-3 w-3" />
-            Link
-          </Button>
-        </div>
-      {/if}
+      <!-- Linking images waits for the images port (legacy linkImage/unlinkImage). -->
+      <NotPorted />
     </div>
   </div>
 
@@ -681,21 +676,8 @@
 
     {#if addingRelation}
       <form
-        method="POST"
-        action="?/addRelation"
         class="mb-3 flex flex-wrap items-end gap-2 rounded-md border border-border p-3"
-        use:enhance={({ submitter }) => {
-          keepRelationFormOpen = submitter?.getAttribute('name') === 'another';
-          return async ({ result, update }) => {
-            if (result.type === 'success') {
-              addingRelation = keepRelationFormOpen;
-              relationTarget = [];
-              newTarget = null;
-              relationLabelText = '';
-            }
-            await update({ reset: false });
-          };
-        }}
+        onsubmit={submitRelation}
       >
         <div class="space-y-1">
           <span class="block text-xs text-muted-foreground">Who</span>
@@ -810,18 +792,15 @@
               <span class="text-xs text-muted-foreground">— {relation.label}</span>
             {/if}
             {#if canEdit}
-              <form method="POST" action="?/deleteRelation" class="ml-auto" use:enhance>
-                <input type="hidden" name="relationId" value={relation.id} />
-                <Button
-                  type="submit"
-                  variant="ghost"
-                  size="icon-xs"
-                  class="opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
-                  aria-label="Remove relationship"
-                >
-                  <Trash2 class="h-3 w-3 text-destructive" />
-                </Button>
-              </form>
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                class="ml-auto opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+                aria-label="Remove relationship"
+                onclick={() => removeRelation(relation.id)}
+              >
+                <Trash2 class="h-3 w-3 text-destructive" />
+              </Button>
             {/if}
           </div>
         {/each}
@@ -870,7 +849,7 @@
   {#if showConvert && page.data?.entityType === 'note'}
     <div class="mt-4 rounded-lg border border-border bg-card p-4">
       <h3 class="mb-3 text-sm font-medium">Convert Note to Scene</h3>
-      <form method="POST" action="?/convertToScene" use:enhance class="space-y-3">
+      <form class="space-y-3" onsubmit={(e) => e.preventDefault()}>
         <div class="space-y-1">
           <Label for="convertStory" class="text-xs text-muted-foreground">Story</Label>
           <Combobox
@@ -916,26 +895,10 @@
           ? new Date(page.data.entity.modifiedAt).toLocaleString()
           : ''}
       </p>
-      <form
-        method="POST"
-        action="?/delete"
-        use:enhance={() => {
-          return async ({ result }) => {
-            if (result.type === 'success') {
-              const type = page.data?.entityType;
-              if (type) {
-                synced = { ...values };
-                goto(`/projects/${page.params.id}/${entityTypeToRoute(type)}`);
-              }
-            }
-          };
-        }}
-      >
-        <Button type="submit" variant="ghost" size="sm" class="text-destructive">
-          <Trash2 class="h-4 w-4" />
-          Delete
-        </Button>
-      </form>
+      <Button variant="ghost" size="sm" class="text-destructive" onclick={remove}>
+        <Trash2 class="h-4 w-4" />
+        Delete
+      </Button>
     </div>
   {:else}
     <div class="mt-4 rounded-lg border border-border bg-card p-4">

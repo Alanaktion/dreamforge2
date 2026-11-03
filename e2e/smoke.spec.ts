@@ -30,8 +30,77 @@ async function signIn(page: Page) {
   }
 }
 
-// Needs the entity, story, relation and backup endpoints, which have not moved to the
-// FastAPI backend yet. Re-enable as they are ported.
+test('entities: awkward names, autosave, relations, bookmarks, comments, undo delete', async ({
+  page
+}, testInfo) => {
+  const errors: string[] = [];
+  page.on('pageerror', (cause) => errors.push(cause.message));
+  await signIn(page);
+  await page.goto('/projects');
+  await page.getByRole('button', { name: 'New Project', exact: true }).first().click();
+  await page.getByLabel('Project Name').fill(`Entities ${testInfo.project.name}`);
+  await page.getByRole('button', { name: 'Create', exact: true }).click();
+  await expect(page).toHaveURL(/\/projects\/[^/]+$/);
+  const project = new URL(page.url()).pathname;
+
+  // Names that YAML would read as something other than text must survive a round trip.
+  const awkward: Record<string, string> = {
+    characters: 'true',
+    organizations: 'null',
+    locations: '007',
+    cultures: '# hash',
+    species: '"Never"',
+    items: '[Untitled]',
+    notes: 'yes'
+  };
+  for (const [type, name] of Object.entries(awkward)) {
+    await page.goto(`${project}/${type}`);
+    const quick = page.getByRole('textbox', { name: /^Quick add/ });
+    await quick.fill(name);
+    await quick.press('Enter');
+    await expect(quick).toHaveValue('');
+    await page.reload();
+    await expect(page.getByRole('main').getByText(name, { exact: true }).first()).toBeVisible();
+  }
+
+  await page.goto(`${project}/characters`);
+  const quick = page.getByRole('textbox', { name: /^Quick add/ });
+  await quick.fill('Vess: cynical, smuggler');
+  await quick.press('Enter');
+  await expect(page.getByText('Added Vess')).toBeVisible();
+  await page.getByRole('main').getByText('Vess', { exact: true }).first().click();
+  await expect(page).toHaveURL(/\/characters\/[^/]+$/);
+  await page.getByRole('textbox', { name: 'Name' }).fill('Vess Arlen');
+  await expect(page.getByText('Saved', { exact: true })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole('textbox', { name: 'Name' })).toHaveValue('Vess Arlen');
+
+  await page.getByRole('button', { name: 'Bookmark', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Unbookmark', exact: true })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Add', exact: true }).click();
+  await page.getByText('Choose or create…').click();
+  await page.getByRole('option', { name: /^true Character$/ }).click();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(page.getByRole('link', { name: 'true', exact: true })).toBeVisible();
+
+  await page.getByPlaceholder(/comment/i).fill('Check her motives.');
+  await page.getByRole('button', { name: 'Post comment' }).click();
+  await expect(page.getByText('Check her motives.')).toBeVisible();
+
+  await page.goto(`${project}/characters`);
+  const vess = page.getByRole('main').getByText('Vess Arlen', { exact: true });
+  const row = page.locator('div.group').filter({ hasText: 'Vess Arlen' });
+  await row.getByRole('button', { name: 'More actions' }).click();
+  await row.getByRole('button', { name: 'Delete' }).click();
+  await expect(vess).toHaveCount(0);
+  await page.getByRole('button', { name: 'Undo' }).click();
+  await expect(vess).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+// Needs the story, relations page, export and import endpoints, which have not moved to
+// the FastAPI backend yet. Re-enable as they are ported.
 test.fixme('production login, awkward entities, autosave, relations and project ZIP restore', async ({
   page
 }, testInfo) => {

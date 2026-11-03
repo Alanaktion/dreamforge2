@@ -4,10 +4,12 @@ Open-source, self-hosted web app for fiction worldbuilding and writing. Markdown
 SvelteKit single-page frontend and a FastAPI (Python) backend.
 
 > **Backend rework in progress.** The server is moving from SvelteKit server routes to FastAPI
-> (`backend/`). Sign-in, accounts, instance admin, invites, members, pins and the project list
-> are on the new backend. Project content (entities, stories, plots, images, search, trash,
-> backups, import/export) is not yet: those pages show "Not available yet". The previous
-> server code is kept under `legacy/routes/` and `src/lib/server/` as the reference for porting.
+> (`backend/`). Sign-in, accounts, instance admin, invites, members, pins, the project list,
+> and entities (with custom fields, relations, bookmarks, comments and the command palette) are
+> on the new backend. Stories, plots, timelines, images, search, the trash page, the project
+> dashboard, backups and import/export are not yet: those pages show "Not available yet". The
+> previous server code is kept under `legacy/routes/` and `src/lib/server/` as the reference
+> for porting.
 
 ## Quick Start (Docker)
 

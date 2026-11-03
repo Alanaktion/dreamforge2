@@ -51,7 +51,7 @@
       const res = await fetch(`/api/projects/${projectId}/comments`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ targetType, targetId, commentBody: newBody.trim() })
+        body: JSON.stringify({ targetType, targetId, body: newBody.trim() })
       });
       if (res.ok) {
         const comment = await res.json();
@@ -65,7 +65,7 @@
 
   async function deleteComment(commentId: string) {
     const res = await fetch(
-      `/api/projects/${projectId}/comments?commentId=${encodeURIComponent(commentId)}`,
+      `/api/projects/${projectId}/comments/${encodeURIComponent(commentId)}`,
       { method: 'DELETE' }
     );
     if (res.ok) {
@@ -75,7 +75,7 @@
 
   async function toggleResolve(comment: Comment) {
     const res = await fetch(
-      `/api/projects/${projectId}/comments?commentId=${encodeURIComponent(comment.id)}`,
+      `/api/projects/${projectId}/comments/${encodeURIComponent(comment.id)}`,
       {
         method: 'PATCH',
         headers: { 'content-type': 'application/json' },

@@ -1,6 +1,9 @@
 <script lang="ts">
   import { untrack } from 'svelte';
-  import { enhance } from '$app/forms';
+  import { page } from '$app/state';
+  import { invalidateAll } from '$app/navigation';
+  import { ApiError } from '$lib/api';
+  import { answerPrompt } from '$lib/api/entities';
   import { Lightbulb, Shuffle, SkipForward, Dices, ChevronDown, ChevronUp } from '@lucide/svelte';
   import { Button } from '$lib/components/ui/button';
   import { Textarea } from '$lib/components/ui/textarea';
@@ -82,6 +85,24 @@
     picked = [...picked, ...chosen];
   }
 
+  async function submit(event: SubmitEvent) {
+    event.preventDefault();
+    if (!submitValue || !current) return;
+    saving = true;
+    error = '';
+    try {
+      await beforeSubmit?.();
+      await answerPrompt(page.params.id!, type, page.params.entityId!, current.id, submitValue);
+      resetInput();
+      if (unanswered.length === 0) position = (position + 1) % queue.length;
+      await invalidateAll();
+    } catch (cause) {
+      error = cause instanceof ApiError ? cause.message : 'Could not save answer';
+    } finally {
+      saving = false;
+    }
+  }
+
   function onKeydown(e: KeyboardEvent) {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
@@ -113,32 +134,7 @@
     </button>
 
     {#if open && current}
-      <form
-        method="POST"
-        action="?/answerPrompt"
-        class="mt-3 space-y-3"
-        use:enhance={async ({ cancel }) => {
-          if (!submitValue) {
-            cancel();
-            return;
-          }
-          saving = true;
-          await beforeSubmit?.();
-          return async ({ result, update }) => {
-            saving = false;
-            if (result.type === 'success') {
-              resetInput();
-              if (unanswered.length === 0) position = (position + 1) % queue.length;
-            } else if (result.type === 'failure') {
-              error = (result.data?.error as string) || 'Could not save answer';
-            }
-            await update({ reset: false });
-          };
-        }}
-      >
-        <input type="hidden" name="promptId" value={current.id} />
-        <input type="hidden" name="answer" value={submitValue} />
-
+      <form class="mt-3 space-y-3" onsubmit={submit}>
         <div class="flex items-center gap-2 text-xs text-muted-foreground">
           <span class="rounded bg-secondary px-1.5 py-0.5">{current.category}</span>
           {#if answered.has(current.id)}

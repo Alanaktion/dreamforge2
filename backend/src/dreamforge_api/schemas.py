@@ -1,6 +1,6 @@
 """Request and response bodies. JSON uses camelCase, matching what the Svelte pages expect."""
 
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, StringConstraints
 from pydantic.alias_generators import to_camel
@@ -205,3 +205,178 @@ class Created(Model):
 
 class Ok(Model):
     ok: bool = True
+
+
+# --- Entities -------------------------------------------------------------------------------
+
+EntityTypeName = Literal[
+    "character", "organization", "location", "culture", "species", "item", "note"
+]
+# A field value as it is stored in frontmatter. Lists are tags (strings).
+FieldValue = str | int | float | bool | None | list[Text]
+Body = Annotated[str, StringConstraints(max_length=5_000_000)]
+Name = Annotated[str, StringConstraints(max_length=1000)]
+
+
+class EntityOut(Model):
+    revision: str
+    id: str
+    type: str
+    name: str
+    tags: list[str]
+    status: str
+    image_path: str | None
+    body: str
+    frontmatter: dict[str, Any]
+    created_at: str
+    modified_at: str
+
+
+class EntitySummary(Model):
+    id: str
+    type: str
+    name: str
+    status: str
+    tags: list[str]
+
+
+class CustomFieldOut(Model):
+    id: str
+    entity_type: str
+    key: str
+    label: str
+    field_type: str
+    ref_entity_type: str | None
+    placeholder: str | None
+    required: bool
+    sort_order: int
+
+
+class EntityList(Model):
+    entities: list[EntityOut]
+    custom_fields: list[CustomFieldOut]
+    # Every entity in the project (from the index), for reference pickers.
+    index: list[EntitySummary]
+    project_name: str
+    role: Literal["owner", "editor", "commenter"]
+
+
+class Backlink(Model):
+    kind: Literal["entity", "scene"]
+    id: str
+    name: str
+    context: str
+    href: str
+    reason: str
+
+
+class EntityRelation(Model):
+    id: str
+    outgoing: bool
+    relation_type: str
+    label: str | None
+    other_id: str
+    other_name: str
+    other_type: str | None
+
+
+class EntityDetail(Model):
+    entity: EntityOut
+    custom_fields: list[CustomFieldOut]
+    index: list[EntitySummary]
+    bookmarked: bool
+    backlinks: list[Backlink]
+    relations: list[EntityRelation]
+    project_name: str
+    project_owner_id: str
+    role: Literal["owner", "editor", "commenter"]
+
+
+class EntityCreate(Model):
+    name: Name
+    body: Body = ""
+    fields: dict[Text, FieldValue] = {}
+
+
+class EntityUpdate(Model):
+    fields: dict[Text, FieldValue] = {}
+    body: Body | None = None
+    revision: str | None = None
+    overwrite: bool = False
+
+
+class Saved(Model):
+    revision: str
+    entity: EntityOut
+
+
+class TrashedEntity(Model):
+    id: str
+    entity_id: str
+    entity_type: str
+    name: str
+    deleted_at: str
+    expires_at: str
+
+
+class BookmarkResult(Model):
+    bookmarked: bool
+
+
+class RelationCreate(Model):
+    source_id: Text
+    target_id: Text = ""
+    new_name: Name = ""
+    new_type: str = ""
+    relation_type: str
+    label: Text = ""
+
+
+class CustomFieldCreate(Model):
+    entity_type: EntityTypeName
+    key: Text
+    label: Text
+    field_type: str
+    ref_entity_type: EntityTypeName | None = None
+    placeholder: Text = ""
+    required: bool = False
+
+
+class CommentOut(Model):
+    id: str
+    target_type: str
+    target_id: str
+    user_id: str
+    username: str
+    body: str
+    created_at: str
+    resolved: bool
+
+
+class CommentCreate(Model):
+    target_type: Text
+    target_id: Text
+    body: Annotated[str, StringConstraints(max_length=10_000)]
+
+
+class CommentResolve(Model):
+    resolved: bool
+
+
+class PaletteStory(Model):
+    id: str
+    title: str
+
+
+class PaletteScene(Model):
+    id: str
+    story_id: str
+    story_title: str
+    chapter_title: str
+    title: str
+
+
+class Palette(Model):
+    entities: list[EntitySummary]
+    stories: list[PaletteStory]
+    scenes: list[PaletteScene]
