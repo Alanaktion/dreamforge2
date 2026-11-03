@@ -525,21 +525,24 @@ def list_trash(db: Session, project: Project) -> list[dict[str, Any]]:
     for item in items:
         stash = _stash(item)
         location = _trash_location(base, item)
-        name = None
+        name, preview = None, ""
         if item.kind == "image":
             name = stash.get("originalName")
         elif location is not None and item.kind == "story":
             meta = stories.read_story_file(location / "story.json")
-            name = meta and meta["title"]
+            name, preview = (meta["title"], meta["description"] or "") if meta else (None, "")
         elif location is not None and item.kind == "chapter":
             meta = stories.read_chapter_file(location / "chapter.md", item.entity_id)
             name = meta and meta["title"]
         elif location is not None and item.kind == "scene":
             meta = stories.read_scene_file(location, "")
-            name = (meta and meta["title"]) or "Untitled Scene"
+            name, preview = (meta["title"], meta["body"]) if meta else (None, "")
+            name = name or "Untitled Scene"
         elif location is not None:
             md = read_markdown_file(location)
-            name = md and md[0].get("name") and js_str(md[0]["name"])
+            if md:
+                name = md[0].get("name") and js_str(md[0]["name"])
+                preview = md[1]
         story_id = stash.get("storyId") if item.kind in ("chapter", "scene") else None
         result.append(
             {
@@ -549,6 +552,9 @@ def list_trash(db: Session, project: Project) -> list[dict[str, Any]]:
                 "kind": item.kind,
                 "name": name or item.entity_id,
                 "story_id": story_id if isinstance(story_id, str) else None,
+                "preview": preview[:200],
+                "mime_type": stash.get("mimeType") if item.kind == "image" else None,
+                "size": stash.get("size") if item.kind == "image" else None,
                 "deleted_at": item.deleted_at,
                 "expires_at": item.expires_at,
             }

@@ -1,8 +1,9 @@
 <script lang="ts">
   import { untrack } from 'svelte';
   import { page } from '$app/state';
-  import { enhance, deserialize } from '$app/forms';
   import { invalidateAll, beforeNavigate, goto } from '$app/navigation';
+  import { ApiError } from '$lib/api';
+  import * as storiesApi from '$lib/api/stories';
   import {
     ArrowLeft,
     Plus,
@@ -95,8 +96,7 @@
     if (!exportSceneMeta) add('sceneMeta', 'false');
     if (exportNumberedChapters) add('titleFormat', 'number');
 
-    const query = params.join('&');
-    return `/projects/${page.params.id}/stories/${page.params.storyId}/export${query ? `?${query}` : ''}`;
+    return storiesApi.exportUrl(page.params.id!, page.params.storyId!, params.join('&'));
   });
   let renamingChapterId = $state<string | null>(null);
   let chapterTitle = $state('');
@@ -283,26 +283,39 @@
     saveError = '';
 
     try {
-      const form = new FormData();
-      form.set('revision', revision);
-      if (overwrite) form.set('overwrite', 'true');
-      form.set('chapterId', chapterId);
-      form.set('sceneId', sceneId);
-      for (const [key, value] of Object.entries(values)) form.set(key, value);
-
-      const res = await fetch('?/updateScene', { method: 'POST', body: form });
-      const result = deserialize(await res.text());
-      if (result.type !== 'success') {
-        conflict = result.type === 'failure' && result.status === 409;
+      let result;
+      try {
+        result = await storiesApi.updateScene(
+          page.params.id!,
+          page.params.storyId!,
+          chapterId,
+          sceneId,
+          {
+            title: values.title,
+            status: values.status,
+            narrator: values.narrator,
+            time: values.time,
+            place: values.place,
+            participants: sceneParticipants.slice(),
+            backgroundImage: values.backgroundImage,
+            body: values.body
+          },
+          overwrite ? null : revision
+        );
+      } catch (cause) {
+        conflict = cause instanceof ApiError && cause.status === 409;
         throw new Error(
           conflict
             ? 'This changed elsewhere. Reload latest or overwrite with your edits.'
-            : 'Save failed'
+            : cause instanceof ApiError
+              ? cause.message
+              : 'Save failed',
+          { cause }
         );
       }
-      revision = (result.data as { revision?: string })?.revision ?? revision;
+      revision = result.revision;
       conflict = false;
-      saveError = (result.data as { warning?: string })?.warning ?? '';
+      saveError = result.warning;
 
       savedSnapshot = snapshot;
       lastSavedAt = new Date();
@@ -493,19 +506,85 @@
     }))
   );
 
-  async function submitChapterReorder(ids: string[]) {
-    const form = new FormData();
-    form.set('chapterIds', JSON.stringify(ids));
-    await fetch('?/reorderChapters', { method: 'POST', body: form });
-    await invalidateAll();
+  let actionError = $state('');
+
+  /** Run a tree change (create, rename, reorder, delete), then reload the tree. */
+  async function change<T>(run: () => Promise<T>): Promise<T | undefined> {
+    actionError = '';
+    try {
+      const result = await run();
+      await invalidateAll();
+      return result;
+    } catch (cause) {
+      actionError =
+        cause instanceof ApiError ? cause.message : 'Could not reach the server. Try again.';
+      return undefined;
+    }
   }
 
-  async function submitSceneReorder(chapterId: string, ids: string[]) {
-    const form = new FormData();
-    form.set('chapterId', chapterId);
-    form.set('sceneIds', JSON.stringify(ids));
-    await fetch('?/reorderScenes', { method: 'POST', body: form });
-    await invalidateAll();
+  const projectId = $derived(page.params.id!);
+  const storyId = $derived(page.params.storyId!);
+
+  function submitChapterReorder(ids: string[]) {
+    return change(() => storiesApi.reorderChapters(projectId, storyId, ids));
+  }
+
+  function submitSceneReorder(chapterId: string, ids: string[]) {
+    return change(() => storiesApi.reorderScenes(projectId, storyId, chapterId, ids));
+  }
+
+  async function submitStoryTitle(event: SubmitEvent) {
+    event.preventDefault();
+    const title = String(new FormData(event.currentTarget as HTMLFormElement).get('title') || '');
+    if (await change(() => storiesApi.updateStory(projectId, storyId, title))) {
+      editingStoryTitle = false;
+    }
+  }
+
+  async function submitChapter(event: SubmitEvent) {
+    event.preventDefault();
+    if (await change(() => storiesApi.createChapter(projectId, storyId, chapterTitle))) {
+      showCreateChapter = false;
+      chapterTitle = '';
+    }
+  }
+
+  async function submitRename(event: SubmitEvent, chapterId: string) {
+    event.preventDefault();
+    const title = String(new FormData(event.currentTarget as HTMLFormElement).get('title') || '');
+    if (await change(() => storiesApi.renameChapter(projectId, storyId, chapterId, title))) {
+      renamingChapterId = null;
+    }
+  }
+
+  async function removeChapter(chapterId: string) {
+    if (activeChapterId === chapterId) await closeScene();
+    await change(() => storiesApi.deleteChapter(projectId, storyId, chapterId));
+  }
+
+  async function removeScene(chapterId: string, sceneId: string) {
+    if (activeSceneId === sceneId) {
+      // Deleting the open scene: drop its unsaved edits rather than saving them first.
+      savedSnapshot = JSON.stringify(currentValues());
+      await closeScene();
+    }
+    await change(() => storiesApi.deleteScene(projectId, storyId, chapterId, sceneId));
+  }
+
+  async function addScene(chapterId: string) {
+    const created = await change(() => storiesApi.createScene(projectId, storyId, chapterId));
+    if (created) openSceneById(created.id);
+  }
+
+  async function convertToNote() {
+    if (!activeSceneId) return;
+    if (dirty && !(await saveScene())) return;
+    const sceneId = activeSceneId;
+    const chapterId = activeChapterId;
+    const converted = await change(() =>
+      storiesApi.sceneToNote(projectId, storyId, chapterId, sceneId)
+    );
+    if (converted) await goto(`/projects/${projectId}/notes/${converted.noteId}`);
   }
 
   /** Open a scene created by the server action as soon as it appears in the tree. */
@@ -602,19 +681,8 @@
       </a>
       <div class="mt-2 flex items-center justify-between">
         {#if editingStoryTitle}
-          <form
-            method="POST"
-            action="?/updateStory"
-            class="flex flex-1 items-center gap-1"
-            use:enhance={() => {
-              return async ({ result, update }) => {
-                if (result.type === 'success') editingStoryTitle = false;
-                await update({ reset: false });
-              };
-            }}
-          >
+          <form onsubmit={submitStoryTitle} class="flex flex-1 items-center gap-1">
             <Input name="title" value={page.data?.story?.title || ''} class="h-7" required />
-            <input type="hidden" name="description" value={page.data?.story?.description || ''} />
             <Button type="submit" size="xs">Save</Button>
             <Button
               type="button"
@@ -670,6 +738,10 @@
       </p>
     </div>
 
+    {#if actionError}
+      <p class="mb-3 text-sm text-destructive" role="alert">{actionError}</p>
+    {/if}
+
     <Button
       variant="outline"
       class="mb-4 w-full border-dashed text-muted-foreground hover:border-primary hover:text-foreground"
@@ -681,19 +753,7 @@
 
     {#if showCreateChapter}
       <div class="mb-4 rounded-lg border border-border bg-background p-3">
-        <form
-          method="POST"
-          action="?/createChapter"
-          use:enhance={() => {
-            return async ({ result, update }) => {
-              if (result.type === 'success') {
-                showCreateChapter = false;
-                chapterTitle = '';
-                await update();
-              }
-            };
-          }}
-        >
+        <form onsubmit={submitChapter}>
           <Input
             name="title"
             type="text"
@@ -732,17 +792,9 @@
             />
             {#if renamingChapterId === chapter.id}
               <form
-                method="POST"
-                action="?/renameChapter"
+                onsubmit={(event) => submitRename(event, chapter.id)}
                 class="flex flex-1 items-center gap-1"
-                use:enhance={() => {
-                  return async ({ result, update }) => {
-                    if (result.type === 'success') renamingChapterId = null;
-                    await update({ reset: false });
-                  };
-                }}
               >
-                <input type="hidden" name="chapterId" value={chapter.id} />
                 <Input
                   name="title"
                   value={chapter.title}
@@ -810,18 +862,15 @@
                   >
                     <ArrowDown class="h-3 w-3" />
                   </Button>
-                  <form method="POST" action="?/deleteChapter">
-                    <input type="hidden" name="chapterId" value={chapter.id} />
-                    <Button
-                      type="submit"
-                      variant="ghost"
-                      size="icon-xs"
-                      aria-label="Delete chapter {chapter.title}"
-                      title="Delete chapter"
-                    >
-                      <Trash2 class="h-3 w-3 text-destructive" />
-                    </Button>
-                  </form>
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    aria-label="Delete chapter {chapter.title}"
+                    title="Delete chapter"
+                    onclick={() => removeChapter(chapter.id)}
+                  >
+                    <Trash2 class="h-3 w-3 text-destructive" />
+                  </Button>
                 </div>
               {/if}
             {/if}
@@ -888,48 +937,32 @@
                         >
                           <ArrowDown class="h-3 w-3" />
                         </Button>
-                        <form method="POST" action="?/deleteScene">
-                          <input type="hidden" name="chapterId" value={chapter.id} />
-                          <input type="hidden" name="sceneId" value={scene.id} />
-                          <Button
-                            type="submit"
-                            variant="ghost"
-                            size="icon-xs"
-                            aria-label="Delete {label}"
-                            title="Delete scene"
-                          >
-                            <Trash2 class="h-3 w-3 text-destructive" />
-                          </Button>
-                        </form>
+                        <Button
+                          variant="ghost"
+                          size="icon-xs"
+                          aria-label="Delete {label}"
+                          title="Delete scene"
+                          onclick={() => removeScene(chapter.id, scene.id)}
+                        >
+                          <Trash2 class="h-3 w-3 text-destructive" />
+                        </Button>
                       </div>
                     {/if}
                   </li>
                 {/each}
               </ol>
-              <form
-                method="POST"
-                action="?/createScene"
-                class="px-3 pt-1"
-                use:enhance={() => {
-                  return async ({ result, update }) => {
-                    if (result.type === 'success') {
-                      const created = (result.data as { sceneId?: string })?.sceneId;
-                      await update();
-                      if (created) openSceneById(created);
-                    }
-                  };
-                }}
-              >
-                <input type="hidden" name="chapterId" value={chapter.id} />
-                <Button
-                  type="submit"
-                  variant="ghost"
-                  size="xs"
-                  class="text-muted-foreground hover:text-foreground"
-                >
-                  <Plus class="h-3 w-3" /> Add Scene
-                </Button>
-              </form>
+              {#if canEdit}
+                <div class="px-3 pt-1">
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    class="text-muted-foreground hover:text-foreground"
+                    onclick={() => addScene(chapter.id)}
+                  >
+                    <Plus class="h-3 w-3" /> Add Scene
+                  </Button>
+                </div>
+              {/if}
             </div>
           {/if}
         </li>
@@ -1202,15 +1235,7 @@
             size="sm"
             class="w-full"
             disabled={!canEdit}
-            onclick={async () => {
-              const f = new FormData();
-              f.set('chapterId', activeChapterId);
-              f.set('sceneId', activeSceneId || '');
-              await fetch('?/convertToNote', { method: 'POST', body: f });
-              savedSnapshot = JSON.stringify(currentValues());
-              await invalidateAll();
-              await closeScene();
-            }}
+            onclick={convertToNote}
           >
             <SwitchCamera class="h-4 w-4" />
             Convert to note

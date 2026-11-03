@@ -26,20 +26,31 @@ interface EntityDetail {
   role: 'owner' | 'editor' | 'commenter';
 }
 
+interface ConvertTarget {
+  id: string;
+  title: string;
+  chapters: Array<{ id: string; title: string }>;
+}
+
 export const load: PageLoad = async ({ fetch, params, parent }) => {
   const { user } = await parent();
   if (!user) redirect(302, '/login');
   const entityType = routeToEntityType(params.type);
   if (!entityType) error(404, 'Not found');
 
-  const data = await get<EntityDetail>(entityPath(params.id, entityType, params.entityId), fetch);
+  const [data, stories] = await Promise.all([
+    get<EntityDetail>(entityPath(params.id, entityType, params.entityId), fetch),
+    entityType === 'note'
+      ? get<ConvertTarget[]>(`/api/projects/${params.id}/convert-targets`, fetch)
+      : []
+  ]);
   return {
     entity: data.entity,
     projectName: data.projectName,
     entityType,
     bookmarked: data.bookmarked,
-    // Story targets for "Convert to Scene" and image links arrive with those ports.
-    stories: [] as Array<{ id: string; title: string; chapters: { id: string; title: string }[] }>,
+    // Where "Convert to Scene" can put a note. Image links arrive with the images port.
+    stories,
     customFields: fieldsFor(entityType, data.customFields),
     backlinks: data.backlinks,
     relations: data.relations,

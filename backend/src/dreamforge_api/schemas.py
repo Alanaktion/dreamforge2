@@ -553,6 +553,9 @@ class TrashItemOut(Model):
     kind: str
     name: str
     story_id: str | None
+    preview: str
+    mime_type: str | None
+    size: int | None
     deleted_at: str
     expires_at: str
 
