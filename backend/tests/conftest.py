@@ -1,7 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from dreamforge_api import throttle
+from dreamforge_api import diagnostics, throttle
 from dreamforge_api.main import create_app
 
 ADMIN_EMAIL = "admin@example.test"
@@ -19,6 +19,7 @@ def env(tmp_path, monkeypatch):
     for name in ("PUBLIC_ALLOW_REGISTRATION", "ORIGIN"):
         monkeypatch.delenv(name, raising=False)
     throttle.reset()
+    diagnostics.reset()
     yield tmp_path
 
 

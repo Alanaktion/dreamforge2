@@ -35,7 +35,7 @@ from .routers import (
     transfer,
     trash,
 )
-from .services.archives import run_due_backups
+from .services.archives import remove_stale_snapshots, run_due_backups
 from .services.seed import seed
 from .services.sessions import purge_expired_sessions
 from .services.trash import purge_expired as purge_expired_trash
@@ -53,6 +53,7 @@ def startup() -> None:
         seed(db)
         purge_expired_sessions(db)
     _purge_trash()
+    remove_stale_snapshots()
     settings = get_settings()
     print(
         f"DreamForge startup complete (database={settings.database_path}, "

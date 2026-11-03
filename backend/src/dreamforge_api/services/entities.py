@@ -18,6 +18,7 @@ from typing import Any, Literal
 from sqlalchemy import delete
 from sqlmodel import Session, col, select
 
+from ..diagnostics import report_file_problem
 from ..markdown import read_markdown_file, serialize_markdown, write_markdown_file
 from ..models import Entity, Project
 from ..storage import assert_revision, file_revision, move_and_write_atomic, project_lock
@@ -313,6 +314,7 @@ def scan_project(db: Session, project: Project) -> None:
                 entity_id = md[0]["id"]
                 if entity_id in seen:
                     log.warning("Duplicate entity id %s in %s", entity_id, file)
+                    report_file_problem(file, f"Duplicate entity id: {entity_id}")
                     continue
                 seen.add(entity_id)
                 sync_entity_to_db(db, project.id, entity_type, entity_id, md[0])

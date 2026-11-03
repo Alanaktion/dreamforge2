@@ -187,11 +187,17 @@ class SidebarBookmark(Model):
     entity_type: str
 
 
+class StorageProblem(Model):
+    file: str
+    message: str
+
+
 class ProjectShell(Model):
     project_name: str
     role: Literal["owner", "editor", "commenter"]
     entity_counts: dict[str, int]
     bookmarks: list[SidebarBookmark]
+    storage_problems: list[StorageProblem]
 
 
 class PinResult(Model):
