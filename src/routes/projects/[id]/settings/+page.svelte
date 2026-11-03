@@ -153,11 +153,13 @@
     }
   }
 
-  async function toggleBackups(enabled: boolean) {
+  async function toggleBackups(input: HTMLInputElement) {
+    const enabled = input.checked;
     backupError = null;
     try {
       await setBackupsEnabled(page.params.id ?? '', enabled);
     } catch (cause) {
+      input.checked = !enabled; // the setting did not change; show it as it is
       backupError = cause instanceof ApiError ? cause.message : 'Could not reach the server.';
     }
     await invalidateAll();
@@ -664,7 +666,7 @@
           <input
             type="checkbox"
             checked={page.data?.backupEnabled}
-            onchange={(e) => toggleBackups((e.currentTarget as HTMLInputElement).checked)}
+            onchange={(e) => toggleBackups(e.currentTarget as HTMLInputElement)}
           />
           Automatic backups
         </label>

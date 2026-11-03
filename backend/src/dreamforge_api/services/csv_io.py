@@ -138,7 +138,8 @@ def import_rows(
                 errors.append(f"Row {line}: unknown status {status!r}")
                 continue
             fields["status"] = status
-        match = by_id.get(row["id"]) if row.get("id") else by_name.get(name.lower())
+        # An id from another project (or a deleted entity) falls back to the name.
+        match = (by_id.get(row["id"]) if row.get("id") else None) or by_name.get(name.lower())
         try:
             if match is not None:
                 data: dict[str, Any] = {**fields, "name": name}

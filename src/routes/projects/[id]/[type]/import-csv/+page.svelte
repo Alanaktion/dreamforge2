@@ -1,6 +1,6 @@
 <script lang="ts">
   import { page } from '$app/state';
-  import { goto } from '$app/navigation';
+  import { goto, invalidateAll } from '$app/navigation';
   import { api, ApiError } from '$lib/api';
   import { cellValue, splitList, type FieldValue } from '$lib/api/entities';
   import { csvUrl, importCsvRows, type CsvImportResult, type CsvRow } from '$lib/api/transfer';
@@ -112,6 +112,7 @@
   async function resolveNewFields(): Promise<Record<string, string>> {
     const resolved = { ...mapping };
     const known = new Set(targetFields.map((f) => f.key));
+    let added = false;
     for (const [header, def] of Object.entries(newFields)) {
       if (resolved[header] !== '__new__') continue;
       const label = def.label.trim();
@@ -121,14 +122,22 @@
         continue;
       }
       if (!known.has(key)) {
-        await api(`/api/projects/${projectId}/fields`, {
-          method: 'POST',
-          body: { entityType: page.data?.entityType, key, label, fieldType: def.type }
-        });
+        try {
+          await api(`/api/projects/${projectId}/fields`, {
+            method: 'POST',
+            body: { entityType: page.data?.entityType, key, label, fieldType: def.type }
+          });
+        } catch (cause) {
+          // 409: the field already exists (added since this page loaded); use it.
+          if (!(cause instanceof ApiError && cause.status === 409)) throw cause;
+        }
         known.add(key);
+        added = true;
       }
       resolved[header] = key;
     }
+    // Refresh targetFields so a second import does not try to add the same fields again.
+    if (added) await invalidateAll();
     return resolved;
   }
 

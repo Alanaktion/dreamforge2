@@ -6,6 +6,7 @@ fresh project brings those rows back. Users, sessions and memberships stay with 
 instance.
 """
 
+import errno
 import logging
 import os
 import shutil
@@ -13,6 +14,7 @@ import stat
 import threading
 import time
 import zipfile
+import zlib
 from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
@@ -28,6 +30,7 @@ from ..utils import generate_id, is_safe_path_segment, iso_now
 from .entities import scan_project
 from .members import project_path
 from .metadata import persist_project_metadata, sync_project_metadata
+from .projects import delete_project
 
 log = logging.getLogger("dreamforge")
 
@@ -229,21 +232,38 @@ def extract_archive(zip_path: Path, destination: Path) -> None:
             if key in seen:
                 raise ArchiveError("Unsafe or duplicate ZIP entry")
             seen.add(key)
-            target = destination.joinpath(*parts)
-            if info.is_dir():
-                target.mkdir(parents=True, exist_ok=True)
-                continue
-            target.parent.mkdir(parents=True, exist_ok=True)
-            fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-            try:
-                with os.fdopen(fd, "wb") as output, archive.open(info) as source:
-                    while chunk := source.read(1024 * 1024):
-                        total += len(chunk)
-                        if total > MAX_EXTRACTED_BYTES:
-                            raise ArchiveError("ZIP exceeds restore limits (20,000 files / 512 MB)")
-                        output.write(chunk)
-            except (zipfile.BadZipFile, EOFError, NotImplementedError) as cause:
-                raise ArchiveError("The ZIP archive is damaged") from cause
+            total = _extract_entry(archive, info, destination.joinpath(*parts), total)
+
+
+def _extract_entry(
+    archive: zipfile.ZipFile, info: zipfile.ZipInfo, target: Path, total: int
+) -> int:
+    """Writes one entry; returns the running total of bytes written. Problems that come
+    from the archive itself (a file where a folder must go, a name too long, encryption,
+    corrupt data) are ArchiveErrors; other OS errors, like a full disk, are not."""
+    try:
+        if info.is_dir():
+            target.mkdir(parents=True, exist_ok=True)
+            return total
+        target.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "wb") as output, archive.open(info) as source:
+            while chunk := source.read(1024 * 1024):
+                total += len(chunk)
+                if total > MAX_EXTRACTED_BYTES:
+                    raise ArchiveError("ZIP exceeds restore limits (20,000 files / 512 MB)")
+                output.write(chunk)
+        return total
+    except (FileExistsError, NotADirectoryError, IsADirectoryError) as cause:
+        raise ArchiveError("Unsafe or duplicate ZIP entry") from cause
+    except OSError as cause:
+        if cause.errno == errno.ENAMETOOLONG:
+            raise ArchiveError("A file name in the ZIP is too long") from cause
+        raise
+    except RuntimeError as cause:  # zipfile raises this for encrypted entries
+        raise ArchiveError("Encrypted ZIP archives cannot be restored") from cause
+    except (zipfile.BadZipFile, EOFError, NotImplementedError, zlib.error) as cause:
+        raise ArchiveError("The ZIP archive is damaged") from cause
 
 
 def _set_project_id(file: Path, project_id: str) -> None:
@@ -297,6 +317,10 @@ def restore_project(db: Session, zip_path: Path, user_id: str) -> str:
         return project_id
     except Exception as cause:
         db.rollback()
+        # scan_project commits, so the project's rows may already be saved.
+        leftover = db.get(Project, project_id)
+        if leftover is not None:
+            delete_project(db, leftover)
         shutil.rmtree(directory, ignore_errors=True)
         if isinstance(cause, StorageError):
             # Its message names the server path; say which file in the ZIP instead.

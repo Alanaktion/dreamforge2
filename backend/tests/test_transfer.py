@@ -4,6 +4,7 @@ import json
 import os
 import time
 import zipfile
+from types import SimpleNamespace
 
 import pytest
 from conftest import add_user
@@ -13,7 +14,9 @@ from test_plots_timeline import commenter
 from test_projects import create
 from test_stories import new_story
 
+from dreamforge_api.routers import transfer
 from dreamforge_api.services import archives, starter
+from dreamforge_api.storage import StorageError
 
 
 def stories_of(client, project_id):
@@ -145,11 +148,12 @@ def test_csv_import_creates_updates_and_reports_rows(admin):
         {"name": " "},
         {"name": "Dee", "status": "nonsense"},
         {"id": "missing", "name": "Eve"},  # an unknown id creates a new entity
+        {"id": "other-project", "name": "Cy", "body": "Again"},  # unknown id: matched by name
     ]
     res = admin.post(url, json={"rows": rows})
     assert res.status_code == 200, res.text
     result = res.json()
-    assert (result["created"], result["updated"]) == (2, 2)
+    assert (result["created"], result["updated"]) == (2, 3)
     assert result["errors"] == ["Row 5: missing name", "Row 6: unknown status 'nonsense'"]
 
     by_name = {e["name"]: e for e in entities(admin, project_id, "characters")}
@@ -157,12 +161,32 @@ def test_csv_import_creates_updates_and_reports_rows(admin):
     assert by_name["Ana Prime"]["id"] == ana["id"]
     assert by_name["Ana Prime"]["frontmatter"]["age"] == "21"
     assert by_name["ben"]["status"] == "complete" and by_name["ben"]["tags"] == ["x"]
-    assert by_name["Cy"]["body"] == "New" and by_name["Cy"]["frontmatter"]["traits"] == ["calm"]
+    assert by_name["Cy"]["body"] == "Again" and by_name["Cy"]["frontmatter"]["traits"] == ["calm"]
     assert by_name["Eve"]["id"] != "missing"
 
     assert admin.post(url, json={"rows": []}).status_code == 400
     reader = commenter(admin, project_id)
     assert reader.post(url, json={"rows": [{"name": "X"}]}).status_code == 403
+    assert admin.post(url, json={"rows": "nope"}).status_code == 422
+    assert (
+        admin.post(url, content=b"{nope", headers={"content-type": "application/json"}).status_code
+        == 422
+    )
+
+
+def test_csv_import_refuses_a_chunked_body_past_the_limit(admin, monkeypatch):
+    project_id = create(admin)
+    url = f"/api/projects/{project_id}/csv/characters"
+    monkeypatch.setattr(transfer, "get_settings", lambda: SimpleNamespace(body_size_limit=100))
+
+    def chunks():  # a generator body is sent chunked, with no Content-Length
+        yield b'{"rows": [{"name": "'
+        yield b"x" * 200
+        yield b'"}]}'
+
+    res = admin.post(url, content=chunks(), headers={"content-type": "application/json"})
+    assert res.status_code == 413
+    assert entities(admin, project_id, "characters") == []
 
 
 # --- Project ZIP export and import ----------------------------------------------------------
@@ -246,6 +270,33 @@ def zip_of(files: dict[str, bytes], symlink: str | None = None) -> bytes:
 PROJECT = json.dumps({"name": "Restored"}).encode()
 
 
+def damaged_zip() -> bytes:
+    """A ZIP whose compressed data is garbage (the headers are intact)."""
+    buffer = io.BytesIO()
+    body = b"some note text " * 50
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("project.json", PROJECT)
+        archive.writestr("notes/a.md", body)
+    data = bytearray(buffer.getvalue())
+    start = data.index(b"notes/a.md") + len("notes/a.md")
+    data[start : start + 20] = b"\xff" * 20
+    return bytes(data)
+
+
+def encrypted_zip() -> bytes:
+    """A ZIP whose entry is flagged as encrypted (zipfile cannot write real encryption)."""
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("project.json", PROJECT)
+        archive.writestr("notes/a.md", b"secret")
+    data = bytearray(buffer.getvalue())
+    # Set bit 0 of the general purpose flags in the local and central headers of the entry.
+    for signature, offset in ((b"PK\x03\x04", 6), (b"PK\x01\x02", 8)):
+        position = data.index(signature, data.index(signature) + 1)
+        data[position + offset] |= 1
+    return bytes(data)
+
+
 @pytest.mark.parametrize(
     ("data", "message"),
     [
@@ -256,6 +307,11 @@ PROJECT = json.dumps({"name": "Restored"}).encode()
         (zip_of({"project.json": PROJECT}, symlink="link"), "Unsafe"),
         (zip_of({"project.json": b"{nope"}), "project.json cannot be read"),
         (zip_of({"project.json": PROJECT, "metadata.json": b"[]"}), "metadata.json"),
+        (zip_of({"project.json": PROJECT, "notes": b"x", "notes/a.md": b"x"}), "Unsafe"),
+        (zip_of({"project.json": PROJECT, "notes/a.md": b"x", "notes": b"x"}), "Unsafe"),
+        (zip_of({"project.json": PROJECT, "notes/" + "n" * 300 + ".md": b"x"}), "too long"),
+        (damaged_zip(), "damaged"),
+        (encrypted_zip(), "Encrypted"),
     ],
 )
 def test_restore_refuses_bad_archives(admin, env, data, message):
@@ -272,6 +328,17 @@ def test_restore_limits(admin, monkeypatch):
     monkeypatch.setattr(archives, "MAX_IMPORT_BYTES", 10)
     assert restore(admin, zip_of({"project.json": PROJECT})).status_code == 413
     assert restore(admin, b"").status_code in (400, 413)
+
+
+def test_a_restore_that_fails_after_the_scan_leaves_nothing(admin, env, monkeypatch):
+    def broken(*_args):
+        raise StorageError(env / "projects" / "x" / "metadata.json")
+
+    monkeypatch.setattr(archives, "persist_project_metadata", broken)
+    res = restore(admin, zip_of({"project.json": PROJECT, "characters/a.md": b"# A"}))
+    assert res.status_code == 400 and "metadata.json" in res.json()["detail"], res.text
+    assert admin.get("/api/projects").json()["projects"] == []
+    assert not any((env / "projects").iterdir())
 
 
 def test_restore_minimal_project(admin):

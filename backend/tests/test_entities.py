@@ -207,6 +207,8 @@ def test_custom_fields_owner_only_and_mirrored(admin, env):
         ).status_code
         == 400
     )
+    duplicate = {"entityType": "character", "key": "eyes", "label": "Eyes 2", "fieldType": "text"}
+    assert admin.post(base, json=duplicate).status_code == 409
     meta = json.loads((folder(env, project_id) / "metadata.json").read_text())
     assert [f["key"] for f in meta["fields"]] == ["eyes"]
     assert meta["fields"][0]["entityType"] == "character" and meta["fields"][0]["sortOrder"] == 0

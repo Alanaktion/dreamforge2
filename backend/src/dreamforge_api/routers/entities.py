@@ -306,6 +306,9 @@ def add_field(project_id: str, body: CustomFieldCreate, auth: CurrentAuth, db: D
         raise HTTPException(400, "That key is used by every entity. Choose another.")
     if body.field_type not in custom_fields.FIELD_TYPES:
         raise HTTPException(400, "Invalid field type")
+    existing = custom_fields.get_custom_fields(db, project.id, body.entity_type)
+    if any(f.key == key for f in existing):
+        raise HTTPException(409, "A field with that key already exists")
     record = custom_fields.add_custom_field(
         db,
         project,

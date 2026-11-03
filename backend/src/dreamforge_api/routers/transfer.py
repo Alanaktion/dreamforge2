@@ -12,9 +12,12 @@ from typing import Annotated
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, Response
+from pydantic import ValidationError
 from starlette.background import BackgroundTask
 
+from ..config import get_settings
 from ..db import Db
 from ..deps import CurrentAuth
 from ..schemas import (
@@ -55,8 +58,39 @@ def export_csv(project_id: str, route: str, auth: CurrentAuth, db: Db):
     )
 
 
+def _csv_access(project_id: str, auth: CurrentAuth, db: Db) -> None:
+    """Refuses non-editors before the body is read, then ends the write transaction auth
+    opened so a slow upload does not hold the lock. The endpoint checks again."""
+    _editor(db, project_id, auth)
+    db.rollback()
+
+
+async def _csv_body(
+    request: Request, _access_checked: Annotated[None, Depends(_csv_access)]
+) -> CsvImport:
+    """The JSON body, refused past the request size limit even when it is sent chunked
+    (the app middleware only checks a declared Content-Length)."""
+    limit = get_settings().body_size_limit
+    chunks, size = [], 0
+    async for chunk in request.stream():
+        size += len(chunk)
+        if size > limit:
+            raise HTTPException(413, "Request body too large")
+        chunks.append(chunk)
+    try:
+        return CsvImport.model_validate_json(b"".join(chunks))
+    except ValidationError as cause:
+        raise RequestValidationError(cause.errors(include_input=False)) from cause
+
+
 @router.post("/{project_id}/csv/{route}", response_model=CsvImportResult)
-def import_csv(project_id: str, route: str, body: CsvImport, auth: CurrentAuth, db: Db):
+def import_csv(
+    project_id: str,
+    route: str,
+    body: Annotated[CsvImport, Depends(_csv_body)],
+    auth: CurrentAuth,
+    db: Db,
+):
     entity_type = _type(route)
     project = _editor(db, project_id, auth)
     if not body.rows:
