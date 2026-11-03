@@ -10,8 +10,11 @@
     Users,
     UserPlus,
     TriangleAlert,
-    Target
+    Target,
+    Archive,
+    RefreshCw
   } from '@lucide/svelte';
+  import { invalidateAll } from '$app/navigation';
   import type { EntityType } from '$lib/types';
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
@@ -89,34 +92,28 @@
 
   let deleteConfirmName = $state('');
   let deleteError = $state<string | null>(null);
+
+  let reindexing = $state(false);
+  let reindexMessage = $state('');
+
+  async function reindex() {
+    reindexing = true;
+    reindexMessage = '';
+    try {
+      const res = await fetch(`/api/projects/${page.params.id}/sync`, { method: 'POST' });
+      reindexMessage = res.ok ? 'Index rebuilt from disk.' : 'Re-index failed.';
+      await invalidateAll();
+    } catch {
+      reindexMessage = 'Re-index failed.';
+    } finally {
+      reindexing = false;
+    }
+  }
 </script>
 
 <svelte:head>
   <title>Settings — {page.data?.project?.name || 'Project'} — DreamForge</title>
 </svelte:head>
-{#if isOwner}
-  <section class="mx-auto my-6 max-w-4xl space-y-3 rounded border p-4">
-    <h2 class="text-lg font-semibold">Backups</h2>
-    <form method="POST" action="?/backup" use:enhance>
-      <Button type="submit">Back up now</Button>
-    </form>
-    <form method="POST" action="?/backupSettings" use:enhance>
-      <label
-        ><input type="checkbox" name="enabled" checked={page.data?.backupEnabled} /> Automatic backups</label
-      >
-      <Button type="submit" variant="outline">Save backup settings</Button>
-    </form>
-    {#each page.data?.backups ?? [] as backup}
-      <p>
-        <a class="underline" href={`/projects/${page.params.id}/backups/${backup.name}`}
-          >{backup.createdAt}</a
-        >
-        ({Math.round(backup.size / 1024)} KB)
-      </p>
-    {:else}<p>No backups yet.</p>{/each}
-    {#if page.form?.error}<p role="alert" class="text-destructive">{page.form.error}</p>{/if}
-  </section>
-{/if}
 
 <div class="mx-auto max-w-4xl p-6">
   <div class="mb-6">
@@ -508,6 +505,35 @@
       </div>
     </div>
 
+    <div class="mb-8 rounded-lg border border-border bg-card p-4">
+      <h2 class="mb-4 flex items-center gap-2 text-lg font-semibold">
+        <Archive class="h-4 w-4" />
+        Backups
+      </h2>
+      <div class="flex flex-wrap items-center gap-3">
+        <form method="POST" action="?/backup" use:enhance>
+          <Button type="submit">Back up now</Button>
+        </form>
+        <form method="POST" action="?/backupSettings" use:enhance class="flex items-center gap-3">
+          <label class="flex items-center gap-2 text-sm"
+            ><input type="checkbox" name="enabled" checked={page.data?.backupEnabled} /> Automatic backups</label
+          >
+          <Button type="submit" variant="outline">Save backup settings</Button>
+        </form>
+      </div>
+      <ul class="mt-3 space-y-1 text-sm">
+        {#each page.data?.backups ?? [] as backup (backup.name)}
+          <li>
+            <a class="underline" href={`/projects/${page.params.id}/backups/${backup.name}`}
+              >{backup.createdAt}</a
+            >
+            <span class="text-muted-foreground">({Math.round(backup.size / 1024)} KB)</span>
+          </li>
+        {:else}<li class="text-muted-foreground">No backups yet.</li>{/each}
+      </ul>
+      {#if page.form?.error}<p role="alert" class="mt-2 text-destructive">{page.form.error}</p>{/if}
+    </div>
+
     <div class="rounded-lg border border-destructive/50 bg-card p-4">
       <h2 class="mb-4 flex items-center gap-2 text-lg font-semibold text-destructive">
         <TriangleAlert class="h-4 w-4" />
@@ -557,5 +583,24 @@
         </Button>
       </form>
     </div>
+  {/if}
+
+  {#if page.data?.role !== 'commenter'}
+    <details class="mt-8 rounded-lg border border-border bg-card p-4">
+      <summary class="cursor-pointer text-lg font-semibold">Advanced</summary>
+      <div class="mt-4 space-y-2">
+        <p class="text-sm text-muted-foreground">
+          DreamForge watches the project folder and picks up changes on its own. If you edited files
+          while the server was stopped and something looks out of date, re-index from disk.
+        </p>
+        <Button onclick={reindex} disabled={reindexing} variant="outline">
+          <RefreshCw class="h-4 w-4 {reindexing ? 'animate-spin' : ''}" />
+          {reindexing ? 'Re-indexing…' : 'Re-index from disk'}
+        </Button>
+        {#if reindexMessage}<p role="status" class="text-sm text-muted-foreground">
+            {reindexMessage}
+          </p>{/if}
+      </div>
+    </details>
   {/if}
 </div>

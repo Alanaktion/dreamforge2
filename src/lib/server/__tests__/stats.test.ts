@@ -11,7 +11,7 @@ const { testDb } = vi.hoisted(() => {
 vi.mock('../db', () => ({ default: testDb }));
 
 import { migrate } from '../migrate';
-import { getProjectStats } from '../stats';
+import { getProjectStats, getProjectSummary } from '../stats';
 import { createEntity, ENTITY_DIRS } from '../entities';
 import { createStory, createChapter, createScene, updateScene } from '../stories';
 import { generateId } from '$lib/utils';
@@ -130,5 +130,18 @@ describe('getProjectStats', () => {
     expect(scene.href).toContain(`/stories/${story.id}?scene=`);
     const entity = stats.recent.find((r) => r.kind === 'entity')!;
     expect(entity.href).toContain('/characters/');
+  });
+});
+
+describe('getProjectSummary', () => {
+  it('counts world entries, stories, and words for a project card', () => {
+    createEntity(PROJECT_ID, tmpDir, 'character', { name: 'Holly' });
+    createEntity(PROJECT_ID, tmpDir, 'note', { name: 'Idea' });
+    const story = createStory(tmpDir, 'Road');
+    const chapter = createChapter(tmpDir, story.id, 'One');
+    const scene = createScene(tmpDir, story.id, chapter.id, 'Start');
+    updateScene(tmpDir, story.id, chapter.id, scene.id, { body: 'one two three' });
+
+    expect(getProjectSummary(tmpDir)).toEqual({ entityCount: 2, storyCount: 1, wordCount: 3 });
   });
 });

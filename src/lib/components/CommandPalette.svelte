@@ -145,22 +145,24 @@
         run: () => theme.toggle()
       },
       {
-        id: 'view-zen',
-        label: zen.active ? 'Exit Zen Mode' : 'Enter Zen Mode',
-        group: 'View',
-        icon: Scan,
-        keywords: ['focus', 'distraction free', 'fullscreen'],
-        run: () => zen.toggle()
-      },
-      {
         id: 'view-export',
         label: 'Export Project as ZIP',
         group: 'View',
         icon: Download,
         keywords: ['download', 'backup', 'archive'],
-        run: () => window.open(`${base}/export`, '_blank')
+        run: () => (window.location.href = `${base}/export`)
       }
     ];
+
+    if (page.params?.storyId)
+      view.push({
+        id: 'view-zen',
+        label: zen.active ? 'Exit focus mode' : 'Enter focus mode',
+        group: 'View',
+        icon: Scan,
+        keywords: ['zen', 'focus', 'distraction free', 'fullscreen'],
+        run: () => zen.toggle()
+      });
 
     return [...navigate, ...create, ...view];
   });

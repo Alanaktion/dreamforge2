@@ -16,11 +16,33 @@
   import { Input } from '$lib/components/ui/input';
   import { Label } from '$lib/components/ui/label';
   import { Textarea } from '$lib/components/ui/textarea';
+  import { formatWordCount } from '$lib/utils/wordCount';
 
   let showCreate = $state(false);
   let name = $state('');
   let description = $state('');
+  let creating = $state(false);
 </script>
+
+{#snippet summaryLine(project: {
+  modifiedAt: string;
+  summary: { entityCount: number; storyCount: number; wordCount: number } | null;
+})}
+  <p class="mt-1 flex flex-wrap gap-x-3 text-xs text-muted-foreground">
+    {#if project.summary}
+      <span>{formatWordCount(project.summary.wordCount)} words</span>
+      <span
+        >{project.summary.storyCount}
+        {project.summary.storyCount === 1 ? 'story' : 'stories'}</span
+      >
+      <span
+        >{project.summary.entityCount} world
+        {project.summary.entityCount === 1 ? 'entry' : 'entries'}</span
+      >
+    {/if}
+    <span>Last activity {formatDate(project.modifiedAt)}</span>
+  </p>
+{/snippet}
 
 <svelte:head>
   <title>Projects — DreamForge</title>
@@ -42,13 +64,10 @@
         method="POST"
         action="?/create"
         use:enhance={() => {
-          return async ({ result, update }) => {
-            if (result.type === 'success') {
-              showCreate = false;
-              name = '';
-              description = '';
-              update();
-            }
+          creating = true;
+          return async ({ update }) => {
+            creating = false;
+            await update();
           };
         }}
         class="space-y-4"
@@ -62,7 +81,7 @@
           <Textarea id="description" name="description" bind:value={description} />
         </div>
         <div class="flex gap-2">
-          <Button type="submit">Create</Button>
+          <Button type="submit" disabled={creating}>Create</Button>
           <Button type="button" variant="outline" onclick={() => (showCreate = false)}
             >Cancel</Button
           >
@@ -158,9 +177,7 @@
           {#if project.description}
             <p class="mt-1 text-sm text-muted-foreground">{project.description}</p>
           {/if}
-          <p class="mt-1 text-xs text-muted-foreground">
-            Modified {formatDate(project.modifiedAt)}
-          </p>
+          {@render summaryLine(project)}
         </div>
         <div class="flex items-center gap-1">
           <form method="POST" action="?/togglePin">
@@ -204,9 +221,7 @@
               {#if project.description}
                 <p class="mt-1 text-sm text-muted-foreground">{project.description}</p>
               {/if}
-              <p class="mt-1 text-xs text-muted-foreground">
-                Modified {formatDate(project.modifiedAt)}
-              </p>
+              {@render summaryLine(project)}
             </div>
             <Button
               href="/projects/{project.id}"

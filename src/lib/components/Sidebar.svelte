@@ -4,9 +4,9 @@
   import { ENTITY_PLURAL, ENTITY_LABELS } from '$lib/entityFields';
   import type { EntityType } from '$lib/types';
   import { getTheme } from '$lib/stores/theme.svelte';
-  import { getZenMode } from '$lib/stores/zenMode.svelte';
   import { getOverlays } from '$lib/stores/overlays.svelte';
   import * as Sidebar from '$lib/components/ui/sidebar/index.js';
+  import { useSidebar } from '$lib/components/ui/sidebar/index.js';
   import {
     House,
     BookMarked,
@@ -18,7 +18,6 @@
     LayoutDashboard,
     BookOpenText,
     GitBranch,
-    Scan,
     Sparkles,
     Command,
     Keyboard,
@@ -30,12 +29,16 @@
     Package,
     FileText,
     Plus,
-    ChevronRight
+    Image as ImageIcon,
+    Settings,
+    Trash2,
+    CircleUser,
+    ShieldCheck
   } from '@lucide/svelte';
 
   const theme = getTheme();
-  const zen = getZenMode();
   const overlays = getOverlays();
+  const sidebar = useSidebar();
 
   const ENTITY_ICONS: Record<EntityType, typeof Users> = {
     character: Users,
@@ -49,42 +52,64 @@
 
   const ENTITY_TYPES = Object.keys(ENTITY_PLURAL) as EntityType[];
 
-  let showMore = $state(false);
-
   let base = $derived(`/projects/${page.params?.id}`);
   let counts = $derived((page.data?.entityCounts || {}) as Record<string, number>);
+
+  let writeLinks = $derived([
+    { label: 'Stories', icon: BookOpenText, section: 'stories' },
+    { label: 'Plots', icon: Sparkles, section: 'plots' }
+  ]);
+  let worldLinks = $derived([
+    { label: 'Relations', icon: GitBranch, section: 'relations' },
+    { label: 'Timelines', icon: Clock, section: 'timelines' },
+    { label: 'Images', icon: ImageIcon, section: 'images' }
+  ]);
+  let projectLinks = $derived([
+    { label: 'Search', icon: Search, section: 'search' },
+    { label: 'Settings', icon: Settings, section: 'settings' },
+    { label: 'Trash', icon: Trash2, section: 'trash' }
+  ]);
 
   function inSection(section: string) {
     let path = `${base}/${section}`;
     return page.url.pathname === path || page.url.pathname.startsWith(`${path}/`);
   }
 
-  let onEntityRoute = $derived(
-    ENTITY_TYPES.filter((t) => inSection(entityTypeToRoute(t)))[0] as EntityType | undefined
-  );
-  let primaryTypes = $derived(
-    ENTITY_TYPES.filter((t) => t === 'character' || (counts[t] ?? 0) > 0 || t === onEntityRoute)
-  );
-  let moreTypes = $derived(ENTITY_TYPES.filter((t) => !primaryTypes.includes(t)));
+  $effect(() => {
+    void page.url.pathname;
+    if (sidebar?.isMobile) sidebar.setOpenMobile(false);
+  });
 </script>
+
+{#snippet navLink(label: string, Icon: typeof Users, href: string, active: boolean)}
+  <Sidebar.MenuItem>
+    <Sidebar.MenuButton isActive={active} tooltipContent={label}>
+      {#snippet child({ props })}
+        <a {href} aria-current={active ? 'page' : undefined} {...props}>
+          <Icon class="h-4 w-4" />
+          <span>{label}</span>
+        </a>
+      {/snippet}
+    </Sidebar.MenuButton>
+  </Sidebar.MenuItem>
+{/snippet}
 
 <Sidebar.Root collapsible="icon">
   <Sidebar.Header>
     <div class="flex items-center gap-2 [&>span:last-child]:truncate">
-      <Sidebar.Trigger />
+      <Sidebar.Trigger class="max-md:hidden" />
       <span class="font-semibold">DreamForge</span>
     </div>
   </Sidebar.Header>
 
   <Sidebar.Content>
     <Sidebar.Group>
-      <Sidebar.GroupLabel>General</Sidebar.GroupLabel>
       <Sidebar.GroupContent>
         <Sidebar.Menu>
           <Sidebar.MenuItem>
             <Sidebar.MenuButton
               onclick={() => overlays.palette.toggle()}
-              tooltipContent="Command Palette"
+              tooltipContent="Quick Open"
             >
               <Command class="h-4 w-4" />
               <span>Quick Open</span>
@@ -94,97 +119,32 @@
               >
             </Sidebar.MenuButton>
           </Sidebar.MenuItem>
-
-          <Sidebar.MenuItem>
-            <Sidebar.MenuButton
-              isActive={page.url.pathname === '/projects'}
-              tooltipContent="Projects"
-            >
-              {#snippet child({ props })}
-                <a href="/projects" {...props}>
-                  <House class="h-4 w-4" />
-                  <span>Projects</span>
-                </a>
-              {/snippet}
-            </Sidebar.MenuButton>
-          </Sidebar.MenuItem>
+          {@render navLink('Projects', House, '/projects', page.url.pathname === '/projects')}
+          {#if page.params?.id}
+            {@render navLink(
+              page.data?.projectName || 'Dashboard',
+              LayoutDashboard,
+              base,
+              page.url.pathname === base
+            )}
+          {/if}
         </Sidebar.Menu>
       </Sidebar.GroupContent>
     </Sidebar.Group>
 
     {#if page.params?.id}
       <Sidebar.Group>
-        <Sidebar.GroupLabel>Current Project</Sidebar.GroupLabel>
+        <Sidebar.GroupLabel>Write</Sidebar.GroupLabel>
         <Sidebar.GroupContent>
           <Sidebar.Menu>
-            <Sidebar.MenuItem>
-              <Sidebar.MenuButton
-                isActive={page.url.pathname === `/projects/${page.params.id}`}
-                tooltipContent="Dashboard"
-              >
-                {#snippet child({ props })}
-                  <a href={`/projects/${page.params.id}`} {...props}>
-                    <LayoutDashboard class="h-4 w-4" />
-                    <span>Dashboard</span>
-                  </a>
-                {/snippet}
-              </Sidebar.MenuButton>
-            </Sidebar.MenuItem>
-
-            <Sidebar.MenuItem>
-              <Sidebar.MenuButton isActive={inSection('stories')} tooltipContent="Stories">
-                {#snippet child({ props })}
-                  <a href={`/projects/${page.params.id}/stories`} {...props}>
-                    <BookOpenText class="h-4 w-4" />
-                    <span>Stories</span>
-                  </a>
-                {/snippet}
-              </Sidebar.MenuButton>
-            </Sidebar.MenuItem>
-
-            <Sidebar.MenuItem>
-              <Sidebar.MenuButton isActive={inSection('plots')} tooltipContent="Plots">
-                {#snippet child({ props })}
-                  <a href={`/projects/${page.params.id}/plots`} {...props}>
-                    <Sparkles class="h-4 w-4" />
-                    <span>Plots</span>
-                  </a>
-                {/snippet}
-              </Sidebar.MenuButton>
-            </Sidebar.MenuItem>
-
-            <Sidebar.MenuItem>
-              <Sidebar.MenuButton isActive={inSection('timelines')} tooltipContent="Timelines">
-                {#snippet child({ props })}
-                  <a href={`/projects/${page.params.id}/timelines`} {...props}>
-                    <Clock class="h-4 w-4" />
-                    <span>Timelines</span>
-                  </a>
-                {/snippet}
-              </Sidebar.MenuButton>
-            </Sidebar.MenuItem>
-
-            <Sidebar.MenuItem>
-              <Sidebar.MenuButton isActive={inSection('relations')} tooltipContent="Relations">
-                {#snippet child({ props })}
-                  <a href={`/projects/${page.params.id}/relations`} {...props}>
-                    <GitBranch class="h-4 w-4" />
-                    <span>Relations</span>
-                  </a>
-                {/snippet}
-              </Sidebar.MenuButton>
-            </Sidebar.MenuItem>
-
-            <Sidebar.MenuItem>
-              <Sidebar.MenuButton isActive={inSection('search')} tooltipContent="Search">
-                {#snippet child({ props })}
-                  <a href={`/projects/${page.params.id}/search`} {...props}>
-                    <Search class="h-4 w-4" />
-                    <span>Search</span>
-                  </a>
-                {/snippet}
-              </Sidebar.MenuButton>
-            </Sidebar.MenuItem>
+            {#each writeLinks as link (link.section)}
+              {@render navLink(
+                link.label,
+                link.icon,
+                `${base}/${link.section}`,
+                inSection(link.section)
+              )}
+            {/each}
           </Sidebar.Menu>
         </Sidebar.GroupContent>
       </Sidebar.Group>
@@ -193,15 +153,17 @@
         <Sidebar.GroupLabel>World</Sidebar.GroupLabel>
         <Sidebar.GroupContent>
           <Sidebar.Menu>
-            {#each showMore ? ENTITY_TYPES : primaryTypes as type (type)}
+            {#each ENTITY_TYPES as type (type)}
               {@const Icon = ENTITY_ICONS[type]}
+              {@const active = inSection(entityTypeToRoute(type))}
               <Sidebar.MenuItem>
-                <Sidebar.MenuButton
-                  isActive={inSection(entityTypeToRoute(type))}
-                  tooltipContent={ENTITY_PLURAL[type]}
-                >
+                <Sidebar.MenuButton isActive={active} tooltipContent={ENTITY_PLURAL[type]}>
                   {#snippet child({ props })}
-                    <a href={`${base}/${entityTypeToRoute(type)}`} {...props}>
+                    <a
+                      href={`${base}/${entityTypeToRoute(type)}`}
+                      aria-current={active ? 'page' : undefined}
+                      {...props}
+                    >
                       <Icon class="h-4 w-4" />
                       <span>{ENTITY_PLURAL[type]}</span>
                     </a>
@@ -226,21 +188,40 @@
                 </Sidebar.MenuAction>
               </Sidebar.MenuItem>
             {/each}
+            {#each worldLinks as link (link.section)}
+              {@render navLink(
+                link.label,
+                link.icon,
+                `${base}/${link.section}`,
+                inSection(link.section)
+              )}
+            {/each}
+          </Sidebar.Menu>
+        </Sidebar.GroupContent>
+      </Sidebar.Group>
 
-            {#if moreTypes.length > 0}
-              <Sidebar.MenuItem>
-                <Sidebar.MenuButton
-                  onclick={() => (showMore = !showMore)}
-                  tooltipContent={showMore ? 'Show fewer' : 'More types'}
-                  class="text-muted-foreground"
-                >
-                  <ChevronRight
-                    class="h-4 w-4 transition-transform {showMore ? 'rotate-90' : ''}"
-                  />
-                  <span>{showMore ? 'Fewer' : `More (${moreTypes.length})`}</span>
-                </Sidebar.MenuButton>
-              </Sidebar.MenuItem>
-            {/if}
+      <Sidebar.Group>
+        <Sidebar.GroupLabel>Project</Sidebar.GroupLabel>
+        <Sidebar.GroupContent>
+          <Sidebar.Menu>
+            {#each projectLinks as link (link.section)}
+              {@render navLink(
+                link.label,
+                link.icon,
+                `${base}/${link.section}`,
+                inSection(link.section)
+              )}
+            {/each}
+            <Sidebar.MenuItem>
+              <Sidebar.MenuButton tooltipContent="Export">
+                {#snippet child({ props })}
+                  <a href="{base}/export" download {...props}>
+                    <Download class="h-4 w-4" />
+                    <span>Export</span>
+                  </a>
+                {/snippet}
+              </Sidebar.MenuButton>
+            </Sidebar.MenuItem>
           </Sidebar.Menu>
         </Sidebar.GroupContent>
       </Sidebar.Group>
@@ -260,7 +241,7 @@
                   <Sidebar.MenuButton tooltipContent={bm.entityName || bm.entityId}>
                     {#snippet child({ props })}
                       <a
-                        href={`/projects/${page.params.id}/${entityTypeToRoute(bm.entityType)}/${bm.entityId}`}
+                        href={`${base}/${entityTypeToRoute(bm.entityType)}/${bm.entityId}`}
                         {...props}
                       >
                         <span class="truncate">{bm.entityName || bm.entityId}</span>
@@ -278,37 +259,16 @@
 
   <Sidebar.Footer>
     <Sidebar.Menu>
-      {#if page.params?.id}
-        <Sidebar.MenuItem>
-          <Sidebar.MenuButton tooltipContent="Export Project">
-            {#snippet child({ props }: { props: Record<string, unknown> })}
-              <a href="/projects/{page.params.id}/export" {...props} target="_blank">
-                <Download class="h-4 w-4" />
-                <span>Export Project</span>
-              </a>
-            {/snippet}
-          </Sidebar.MenuButton>
-        </Sidebar.MenuItem>
-      {/if}
       <Sidebar.MenuItem>
-        <Sidebar.MenuButton onclick={() => theme.toggle()} tooltipContent="Toggle Theme">
+        <Sidebar.MenuButton onclick={() => theme.toggle()} tooltipContent="Toggle theme">
           <SunMoon class="h-4 w-4" />
-          <span>Toggle Theme</span>
-        </Sidebar.MenuButton>
-      </Sidebar.MenuItem>
-      <Sidebar.MenuItem>
-        <Sidebar.MenuButton
-          onclick={() => zen.toggle()}
-          tooltipContent={zen.active ? 'Exit Zen Mode' : 'Zen Mode'}
-        >
-          <Scan class="h-4 w-4" />
-          <span>{zen.active ? 'Exit Zen Mode' : 'Zen Mode'}</span>
+          <span>Toggle theme</span>
         </Sidebar.MenuButton>
       </Sidebar.MenuItem>
       <Sidebar.MenuItem>
         <Sidebar.MenuButton
           onclick={() => overlays.shortcuts.toggle()}
-          tooltipContent="Keyboard Shortcuts"
+          tooltipContent="Keyboard shortcuts"
         >
           <Keyboard class="h-4 w-4" />
           <span>Shortcuts</span>
@@ -317,23 +277,16 @@
           </kbd>
         </Sidebar.MenuButton>
       </Sidebar.MenuItem>
-      <Sidebar.MenuItem>
-        <Sidebar.MenuButton tooltipContent="Account">
-          {#snippet child({ props })}<a href="/account" {...props}
-              ><Users class="h-4 w-4" /><span>Account</span></a
-            >{/snippet}
-        </Sidebar.MenuButton>
-      </Sidebar.MenuItem>
-      <Sidebar.MenuItem>
-        <Sidebar.MenuButton tooltipContent="Log Out">
-          {#snippet child({ props })}
-            <a href="/logout" {...props}>
-              <LogOut class="h-4 w-4" />
-              <span>Log Out</span>
-            </a>
-          {/snippet}
-        </Sidebar.MenuButton>
-      </Sidebar.MenuItem>
+      {@render navLink('Account', CircleUser, '/account', page.url.pathname === '/account')}
+      {#if page.data?.user?.isAdmin}
+        {@render navLink(
+          'Instance admin',
+          ShieldCheck,
+          '/admin',
+          page.url.pathname.startsWith('/admin')
+        )}
+      {/if}
+      {@render navLink('Log out', LogOut, '/logout', false)}
     </Sidebar.Menu>
   </Sidebar.Footer>
 

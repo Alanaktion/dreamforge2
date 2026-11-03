@@ -1,4 +1,5 @@
-import { ENTITY_DIRS, listEntities } from './entities';
+import fs from 'node:fs';
+import { ENTITY_DIRS, getEntityDir, listEntities } from './entities';
 import { listStories, listChapters, listScenes } from './stories';
 import { countWords } from '$lib/utils/wordCount';
 import { entityTypeToRoute } from '$lib/utils/entityTypes';
@@ -127,5 +128,26 @@ export function getProjectStats(projectId: string, projectPath: string): Project
     stories,
     recent: recent.slice(0, RECENT_LIMIT),
     lastScene
+  };
+}
+
+export interface ProjectSummary {
+  entityCount: number;
+  storyCount: number;
+  wordCount: number;
+}
+
+export function getProjectSummary(projectPath: string): ProjectSummary {
+  let entityCount = 0;
+  for (const type of Object.keys(ENTITY_DIRS) as EntityType[]) {
+    const dir = getEntityDir(projectPath, type);
+    if (fs.existsSync(dir))
+      entityCount += fs.readdirSync(dir).filter((f) => f.endsWith('.md')).length;
+  }
+  const { stories } = collectStories(projectPath);
+  return {
+    entityCount,
+    storyCount: stories.length,
+    wordCount: stories.reduce((sum, s) => sum + s.wordCount, 0)
   };
 }

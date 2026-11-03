@@ -1,6 +1,5 @@
 <script lang="ts">
   import { page } from '$app/state';
-  import { invalidateAll } from '$app/navigation';
   import {
     BookOpen,
     Users,
@@ -10,17 +9,8 @@
     Bug,
     Package,
     FileText,
-    Share2,
-    Settings,
-    Trash2,
-    Image as ImageIcon,
-    RefreshCw,
-    Sparkles,
     Clock,
     PenLine,
-    Search,
-    Download,
-    ArrowRight,
     Target,
     Flame
   } from '@lucide/svelte';
@@ -30,8 +20,6 @@
   import { ENTITY_PLURAL } from '$lib/entityFields';
   import { entityTypeToRoute } from '$lib/utils/entityTypes';
   import type { EntityType, ProjectStats, WritingProgress } from '$lib/types';
-
-  let syncing = $state(false);
 
   let stats = $derived((page.data?.stats || null) as ProjectStats | null);
   let progress = $derived((page.data?.progress || null) as WritingProgress | null);
@@ -44,21 +32,6 @@
   );
   let peakDay = $derived(progress ? Math.max(1, ...progress.recent.map((d) => d.words)) : 1);
 
-  async function syncProject() {
-    syncing = true;
-    try {
-      const res = await fetch(`/api/projects/${projectId}/sync`, { method: 'POST' });
-      if (!res.ok) {
-        console.error('Sync failed', await res.text());
-      }
-      await invalidateAll();
-    } catch (e) {
-      console.error('Sync error', e);
-    } finally {
-      syncing = false;
-    }
-  }
-
   const ENTITY_ICONS: Record<EntityType, typeof Users> = {
     character: Users,
     organization: Building2,
@@ -68,17 +41,6 @@
     item: Package,
     note: FileText
   };
-
-  const TOOLS = [
-    { label: 'Stories', icon: BookOpen, href: 'stories' },
-    { label: 'Plots', icon: Sparkles, href: 'plots' },
-    { label: 'Timelines', icon: Clock, href: 'timelines' },
-    { label: 'Relations', icon: Share2, href: 'relations' },
-    { label: 'Search', icon: Search, href: 'search' },
-    { label: 'Images', icon: ImageIcon, href: 'images' },
-    { label: 'Settings', icon: Settings, href: 'settings' },
-    { label: 'Trash', icon: Trash2, href: 'trash' }
-  ];
 
   let entityTypes = $derived(Object.keys(ENTITY_PLURAL) as EntityType[]);
 </script>
@@ -94,16 +56,6 @@
       {#if page.data?.project?.description}
         <p class="mt-1 text-muted-foreground">{page.data.project.description}</p>
       {/if}
-    </div>
-    <div class="flex items-center gap-2">
-      <Button href="/projects/{projectId}/export" target="_blank" variant="outline">
-        <Download class="h-4 w-4" />
-        Export
-      </Button>
-      <Button onclick={syncProject} disabled={syncing} variant="outline">
-        <RefreshCw class="h-4 w-4 {syncing ? 'animate-spin' : ''}" />
-        {syncing ? 'Syncing…' : 'Sync Now'}
-      </Button>
     </div>
   </div>
 
@@ -296,20 +248,4 @@
       {/each}
     </div>
   {/if}
-
-  <h2 class="mb-3 text-sm font-semibold text-muted-foreground">Tools</h2>
-  <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
-    {#each TOOLS as tool (tool.href)}
-      <a
-        href="/projects/{projectId}/{tool.href}"
-        class="group flex items-center gap-3 rounded-lg border border-border bg-card p-4 hover:bg-secondary"
-      >
-        <tool.icon class="h-5 w-5 text-primary" />
-        <span class="text-sm font-medium">{tool.label}</span>
-        <ArrowRight
-          class="ml-auto h-4 w-4 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
-        />
-      </a>
-    {/each}
-  </div>
 </div>

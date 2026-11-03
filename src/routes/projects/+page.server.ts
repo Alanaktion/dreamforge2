@@ -9,7 +9,8 @@ import { eq, desc, and } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { generateId } from '$lib/utils';
 import { getMemberProjects } from '$lib/server/members';
-import { getDataDir } from '$lib/server/paths';
+import { getDataDir, resolveProjectPath } from '$lib/server/paths';
+import { getProjectSummary } from '$lib/server/stats';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { PageServerLoad } from './$types';
@@ -33,9 +34,21 @@ export const load: PageServerLoad = async ({ locals }) => {
   const allProjectIds = new Set(ownedProjects.map((p) => p.id));
   const sharedProjects = memberProjects.filter((p) => !allProjectIds.has(p.id));
 
+  const withSummary = <T extends { id: string; dataPath: string }>(p: T) => {
+    try {
+      return { ...p, summary: getProjectSummary(resolveProjectPath(p.id, p.dataPath)) };
+    } catch {
+      return { ...p, summary: null };
+    }
+  };
+
   return {
-    projects: ownedProjects.map((p) => ({ ...p, pinned: Boolean(p.pinned), isOwner: true })),
-    sharedProjects: sharedProjects.map((p) => ({ ...p, pinned: Boolean(p.pinned), isOwner: false }))
+    projects: ownedProjects.map((p) =>
+      withSummary({ ...p, pinned: Boolean(p.pinned), isOwner: true })
+    ),
+    sharedProjects: sharedProjects
+      .sort((a, b) => (a.modifiedAt < b.modifiedAt ? 1 : -1))
+      .map((p) => withSummary({ ...p, pinned: Boolean(p.pinned), isOwner: false }))
   };
 };
 
@@ -113,7 +126,7 @@ export const actions = {
       })
       .run();
 
-    return { success: true, projectId };
+    redirect(303, `/projects/${projectId}`);
   },
 
   togglePin: async ({ request, locals }) => {

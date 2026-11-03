@@ -30,7 +30,6 @@ test('production login, awkward entities, autosave, relations and project ZIP re
   await page.getByRole('button', { name: 'New Project', exact: true }).first().click();
   await page.getByLabel('Project Name').fill(`Smoke ${testInfo.project.name}`);
   await page.getByRole('button', { name: 'Create', exact: true }).click();
-  await page.getByRole('link', { name: `Smoke ${testInfo.project.name}`, exact: true }).click();
   await expect(page).toHaveURL(/\/projects\/[^/]+$/);
   const project = new URL(page.url()).pathname;
   const types = [
