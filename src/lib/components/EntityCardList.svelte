@@ -1,5 +1,7 @@
 <script lang="ts">
-  import { enhance } from '$app/forms';
+  import { page } from '$app/state';
+  import { ApiError } from '$lib/api';
+  import { deleteEntity } from '$lib/api/entities';
   import { Badge } from '$lib/components/ui/badge';
   import { Button } from '$lib/components/ui/button';
   import { cn, formatDate } from '$lib/utils';
@@ -20,6 +22,18 @@
   } = $props();
 
   let showMenu = $state<string | null>(null);
+  let deleteError = $state('');
+
+  async function remove(entity: Record<string, any>) {
+    deleteError = '';
+    try {
+      const item = await deleteEntity(page.params.id!, entity.type, entity.id);
+      showMenu = null;
+      onDeleted(item.id);
+    } catch (cause) {
+      deleteError = cause instanceof ApiError ? cause.message : 'Could not delete';
+    }
+  }
 </script>
 
 <div class="space-y-2">
@@ -82,30 +96,17 @@
             <div
               class="absolute right-0 top-full z-50 mt-1 w-36 rounded-lg border border-border bg-popover shadow-lg"
             >
-              <form
-                method="POST"
-                action="?/delete"
-                use:enhance={() => {
-                  return async ({ result }) => {
-                    if (result.type === 'success') {
-                      const d = result.data as { trashItem?: { id: string } };
-                      if (d?.trashItem) {
-                        showMenu = null;
-                        onDeleted(d.trashItem.id);
-                      }
-                    }
-                  };
-                }}
+              <button
+                type="button"
+                onclick={() => remove(entity)}
+                class="flex w-full items-center gap-2 px-3 py-2 text-sm text-destructive hover:bg-secondary"
               >
-                <input type="hidden" name="entityId" value={entity.id} />
-                <button
-                  type="submit"
-                  class="flex w-full items-center gap-2 px-3 py-2 text-sm text-destructive hover:bg-secondary"
-                >
-                  <Trash2 class="h-4 w-4" />
-                  Delete
-                </button>
-              </form>
+                <Trash2 class="h-4 w-4" />
+                Delete
+              </button>
+              {#if deleteError}
+                <p class="px-3 pb-2 text-xs text-destructive">{deleteError}</p>
+              {/if}
             </div>
           {/if}
         </div>

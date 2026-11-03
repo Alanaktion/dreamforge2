@@ -170,6 +170,17 @@ def show_entity(project_id: str, route: str, entity_id: str, auth: CurrentAuth, 
     }
 
 
+@router.get("/entities/{route}/{entity_id}/content", response_model=EntityOut)
+def entity_content(project_id: str, route: str, entity_id: str, auth: CurrentAuth, db: Db):
+    """Just the file: fields, body and revision, without the page's extras."""
+    entity_type = _type(route)
+    project, _role = _access(db, project_id, auth)
+    entity = service.get_entity(project, entity_type, entity_id)
+    if entity is None:
+        raise HTTPException(404, "Entity not found")
+    return entity
+
+
 @router.patch("/entities/{route}/{entity_id}", response_model=Saved)
 def update_entity(
     project_id: str, route: str, entity_id: str, body: EntityUpdate, auth: CurrentAuth, db: Db

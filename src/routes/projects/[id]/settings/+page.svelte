@@ -84,6 +84,35 @@
   );
 
   let fieldError = $state<string | null>(null);
+
+  let reindexing = $state(false);
+  let reindexMessage = $state('');
+
+  async function reindex() {
+    reindexing = true;
+    reindexMessage = '';
+    try {
+      await api(`/api/projects/${page.params.id}/sync`, { method: 'POST' });
+      reindexMessage = 'Index rebuilt from disk.';
+      await invalidateAll();
+    } catch {
+      reindexMessage = 'Re-index failed.';
+    } finally {
+      reindexing = false;
+    }
+  }
+
+  async function deleteField(fieldId: string) {
+    try {
+      await api(`/api/projects/${page.params.id}/fields/${encodeURIComponent(fieldId)}`, {
+        method: 'DELETE'
+      });
+      fieldError = null;
+      await invalidateAll();
+    } catch (cause) {
+      fieldError = cause instanceof ApiError ? cause.message : 'Could not delete the field';
+    }
+  }
   let addMemberQuery = $state('');
   let addMemberRole = $state<'editor' | 'commenter'>('editor');
   let memberError = $state<string | null>(null);
@@ -213,7 +242,8 @@
     </fieldset>
   </div>
 
-  <fieldset disabled>
+  <!-- Only the owner manages fields; the API refuses everyone else too. -->
+  <fieldset disabled={!isOwner}>
     <div class="mb-6">
       <Label class="mb-2">Entity Type</Label>
       <div class="flex flex-wrap gap-2">
@@ -234,7 +264,6 @@
         <Settings class="h-4 w-4" />
         Custom Fields — {ENTITY_LABELS[selectedType]}
       </h2>
-      <NotPorted />
 
       {#if typeFields.length === 0}
         <p class="mb-4 text-sm text-muted-foreground">
@@ -255,18 +284,15 @@
                   >
                 {/if}
               </div>
-              <form method="POST" action="?/deleteField" use:enhance>
-                <input type="hidden" name="fieldId" value={field.id} />
-                <Button
-                  type="submit"
-                  variant="ghost"
-                  size="icon-sm"
-                  class="text-destructive hover:text-destructive"
-                  aria-label="Delete field"
-                >
-                  <Trash2 class="h-4 w-4" />
-                </Button>
-              </form>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                class="text-destructive hover:text-destructive"
+                aria-label="Delete field"
+                onclick={() => deleteField(field.id)}
+              >
+                <Trash2 class="h-4 w-4" />
+              </Button>
             </div>
           {/each}
         </div>
@@ -275,18 +301,25 @@
       <div class="border-t border-border pt-4">
         <h3 class="mb-3 text-sm font-medium">Add New Field</h3>
         <form
-          method="POST"
-          action="?/addField"
-          use:enhance={() => {
-            return async ({ result, update }) => {
-              if (result.type === 'success') {
+          use:apiForm={{
+            path: `/api/projects/${page.params.id}/fields`,
+            body: () => ({
+              entityType: selectedType,
+              key: newKey,
+              label: newLabel,
+              fieldType: newFieldType,
+              refEntityType:
+                newFieldType === 'entityRef' && newRefEntityType ? newRefEntityType : null,
+              placeholder: newPlaceholder,
+              required: newRequired
+            }),
+            onresult: async (result) => {
+              if (result.ok) {
                 fieldError = null;
                 resetForm();
-              } else if (result.type === 'failure') {
-                fieldError = (result.data?.error as string) || 'An error occurred';
-              }
-              await update({ reset: false });
-            };
+                await invalidateAll();
+              } else fieldError = result.error;
+            }
           }}
           class="space-y-3"
         >
@@ -654,15 +687,16 @@
       <summary class="cursor-pointer text-lg font-semibold">Advanced</summary>
       <div class="mt-4 space-y-2">
         <p class="text-sm text-muted-foreground">
-          DreamForge watches the project folder and picks up changes on its own. If you edited files
-          while the server was stopped and something looks out of date, re-index from disk.
+          DreamForge re-reads the project folder as you move between pages. If you edited files on
+          disk and something still looks out of date, re-index from disk.
         </p>
-        <NotPorted />
-        <!-- Re-indexing (legacy/routes/api/projects/[id]/sync) is not ported yet. -->
-        <Button disabled variant="outline">
-          <RefreshCw class="h-4 w-4" />
-          Re-index from disk
+        <Button onclick={reindex} disabled={reindexing} variant="outline">
+          <RefreshCw class="h-4 w-4 {reindexing ? 'animate-spin' : ''}" />
+          {reindexing ? 'Re-indexing…' : 'Re-index from disk'}
         </Button>
+        {#if reindexMessage}<p role="status" class="text-sm text-muted-foreground">
+            {reindexMessage}
+          </p>{/if}
       </div>
     </details>
   {/if}

@@ -1,5 +1,7 @@
 <script lang="ts">
-  import { deserialize } from '$app/forms';
+  import { ApiError } from '$lib/api';
+  import { cellValue, updateEntity } from '$lib/api/entities';
+  import { routeToEntityType } from '$lib/utils/entityTypes';
   import { tick } from 'svelte';
   import EntityGridCell from '$lib/components/EntityGridCell.svelte';
   import EntityGridPanel from '$lib/components/EntityGridPanel.svelte';
@@ -72,27 +74,28 @@
     );
     if (current === raw) return true;
 
-    const body = new FormData();
-    body.set('entityId', entityId);
-    body.set('field', column.key);
-    body.set('value', raw);
-    body.set('revision', entities.find((entity) => entity.id === entityId)?.revision ?? '');
-
-    const res = await fetch(`/projects/${projectId}/${route}?/quickUpdate`, {
-      method: 'POST',
-      body
-    });
-
-    const result = deserialize(await res.text());
-    if (result.type === 'success') {
-      onSaved(entityId, column, raw, (result.data as { revision?: string })?.revision);
+    const entity = entities.find((e) => e.id === entityId);
+    try {
+      if (column.key === 'name' && !raw.trim()) throw new ApiError(400, 'Name cannot be empty');
+      const type = column.key === 'tags' ? 'tags' : column.type;
+      const saved = await updateEntity(
+        projectId,
+        entity?.type ?? routeToEntityType(route)!,
+        entityId,
+        { fields: { [column.key]: cellValue(type, raw) } },
+        entity?.revision ?? ''
+      );
+      onSaved(entityId, column, raw, saved.revision);
       return true;
+    } catch (cause) {
+      gridError =
+        cause instanceof ApiError && cause.status === 409
+          ? 'This item changed elsewhere. Your edit was not saved. Copy it, then reload the page before retrying.'
+          : cause instanceof ApiError && cause.status === 400
+            ? cause.message
+            : `Could not save ${column.label}.`;
+      return false;
     }
-    gridError =
-      result.type === 'failure' && result.status === 409
-        ? 'This item changed elsewhere. Your edit was not saved. Copy it, then reload the page before retrying.'
-        : `Could not save ${column.label}.`;
-    return false;
   }
 
   function notify(message: string) {

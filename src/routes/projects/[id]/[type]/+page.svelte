@@ -1,9 +1,11 @@
 <script lang="ts">
   import { page } from '$app/state';
   import { untrack } from 'svelte';
-  import { enhance, deserialize } from '$app/forms';
   import { goto, invalidateAll } from '$app/navigation';
-  import { ENTITY_LABELS, ENTITY_PLURAL } from '$lib/entityFields';
+  import { ApiError } from '$lib/api';
+  import { createEntity, createFormValues, restoreFromTrash } from '$lib/api/entities';
+  import { ENTITY_FIELDS, ENTITY_LABELS, ENTITY_PLURAL } from '$lib/entityFields';
+  import { parseQuickAdd } from '$lib/utils/quickAdd';
   import { entityTypeToRoute } from '$lib/utils/entityTypes';
   import Editor from '$lib/components/Editor.svelte';
   import EntityCardList from '$lib/components/EntityCardList.svelte';
@@ -214,25 +216,69 @@
     ];
   });
 
+  function failure(cause: unknown, fallback: string): string {
+    return cause instanceof ApiError ? cause.message : fallback;
+  }
+
+  /** "Vess: cynical, smuggler" adds Vess with two traits, where the type has traits. */
+  async function quickCreate(input: string) {
+    const allowTraits = ENTITY_FIELDS[entityType].some(
+      (f) => f.key === 'traits' && f.type === 'tags'
+    );
+    const { name, traits } = parseQuickAdd(input, allowTraits);
+    if (!name) throw new ApiError(400, 'Name is required');
+    return createEntity(page.params.id!, entityType, name, traits.length > 0 ? { traits } : {});
+  }
+
   async function addGridRow(name: string): Promise<string | null> {
-    const body = new URLSearchParams({ name });
     try {
-      const res = await fetch(`${page.url.pathname}?/quickCreate`, {
-        method: 'POST',
-        headers: { 'x-sveltekit-action': 'true' },
-        body
-      });
-      const result = deserialize(await res.text());
-      if (result.type === 'success') {
-        await invalidateAll();
-        return null;
-      }
-      if (result.type === 'failure') {
-        return (result.data as { error?: string } | undefined)?.error || 'Could not add row';
-      }
-      return 'Could not add row';
-    } catch {
-      return 'Could not add row';
+      await quickCreate(name);
+      await invalidateAll();
+      return null;
+    } catch (cause) {
+      return failure(cause, 'Could not add row');
+    }
+  }
+
+  let createError = $state('');
+
+  async function submitCreate(event: SubmitEvent) {
+    event.preventDefault();
+    const form = event.currentTarget as HTMLFormElement;
+    createError = '';
+    try {
+      const fields = createFormValues(form, page.data?.customFields || []);
+      const body = entityType === 'note' ? newBody : '';
+      const created = await createEntity(page.params.id!, entityType, newName, fields, body);
+      showCreate = false;
+      newName = '';
+      goto(`/projects/${page.params.id}/${route}/${created.id}`);
+    } catch (cause) {
+      createError = failure(cause, 'Could not create');
+    }
+  }
+
+  async function submitQuick(event: SubmitEvent) {
+    event.preventDefault();
+    quickError = '';
+    try {
+      const created = await quickCreate(quickName);
+      quickAdded = [created.name, ...quickAdded].slice(0, 5);
+      quickName = '';
+      await invalidateAll();
+    } catch (cause) {
+      quickError = failure(cause, 'Could not add');
+    }
+    quickInput?.focus();
+  }
+
+  async function undoDelete() {
+    try {
+      await restoreFromTrash(page.params.id!, toastTrashId);
+      cancelDelete();
+      await invalidateAll();
+    } catch (cause) {
+      toastMessage = failure(cause, 'Could not restore');
     }
   }
 
@@ -338,25 +384,7 @@
 
   {#if showCreate && canEdit}
     <div class="mb-6 rounded-lg border border-border bg-card p-4">
-      <form
-        method="POST"
-        action="?/create"
-        use:enhance={() => {
-          return async ({ result, update }) => {
-            if (result.type === 'success') {
-              showCreate = false;
-              newName = '';
-              const created = (result.data as { entityId?: string } | undefined)?.entityId;
-              if (created) {
-                goto(`/projects/${page.params.id}/${route}/${created}`);
-                return;
-              }
-              update();
-            }
-          };
-        }}
-        class="space-y-4"
-      >
+      <form onsubmit={submitCreate} class="space-y-4">
         <div class="space-y-1.5">
           <Label for="name">Name</Label>
           <Input
@@ -386,7 +414,6 @@
           {#if newBody}
             <div class="space-y-1.5">
               <Label for="body">Content (edit as needed)</Label>
-              <input type="hidden" name="body" value={newBody} />
               <Editor
                 content={newBody}
                 entities={page.data?.entities || []}
@@ -433,6 +460,9 @@
             {/each}
           </div>
         {/if}
+        {#if createError}
+          <p class="text-sm text-destructive">{createError}</p>
+        {/if}
         <div class="flex gap-2">
           <Button type="submit">Create</Button>
           <Button type="button" variant="outline" onclick={() => (showCreate = false)}
@@ -444,25 +474,7 @@
   {/if}
 
   {#if canEdit && (layout === 'cards' || entities.length === 0)}
-    <form
-      method="POST"
-      action="?/quickCreate"
-      class="mb-4"
-      use:enhance={() => {
-        quickError = '';
-        return async ({ result, update }) => {
-          if (result.type === 'success') {
-            const added = (result.data as { name?: string } | undefined)?.name;
-            if (added) quickAdded = [added, ...quickAdded].slice(0, 5);
-            quickName = '';
-            await update({ reset: false });
-          } else if (result.type === 'failure') {
-            quickError = (result.data as { error?: string } | undefined)?.error || 'Could not add';
-          }
-          quickInput?.focus();
-        };
-      }}
-    >
+    <form class="mb-4" onsubmit={submitQuick}>
       <div class="relative">
         <Plus class="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <input
@@ -557,7 +569,10 @@
       {canEdit}
       {emptyMessage}
       {entityHref}
-      onDeleted={(trashId) => showToast('Entity moved to trash', trashId)}
+      onDeleted={(trashId) => {
+        showToast('Entity moved to trash', trashId);
+        void invalidateAll();
+      }}
     />
   {:else}
     <EntityGrid
@@ -583,24 +598,10 @@
     class="fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-3 shadow-lg"
   >
     <span class="text-sm">{toastMessage}</span>
-    <form
-      method="POST"
-      action="?/restore"
-      use:enhance={() => {
-        return async ({ result }) => {
-          if (result.type === 'success') {
-            cancelDelete();
-            goto(window.location.href);
-          }
-        };
-      }}
-    >
-      <input type="hidden" name="trashId" value={toastTrashId} />
-      <Button type="submit" size="sm">
-        <Undo2 class="h-3 w-3" />
-        Undo
-      </Button>
-    </form>
+    <Button size="sm" onclick={undoDelete}>
+      <Undo2 class="h-3 w-3" />
+      Undo
+    </Button>
     <button class="text-xs text-muted-foreground hover:text-foreground" onclick={cancelDelete}>
       Dismiss
     </button>

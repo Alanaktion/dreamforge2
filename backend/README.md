@@ -10,6 +10,15 @@ SvelteKit frontend (`npm run dev`).
 - `passwords.py`: scrypt hashes compatible with the previous Node server, so existing accounts
   keep working.
 - `cli.py`: `dreamforge migrate`, `dreamforge user add`, `dreamforge user reset-password`.
+- `markdown.py`: entity and scene files. Frontmatter is YAML read and written with the YAML 1.2
+  core schema the old server used (PyYAML alone follows 1.1, where `yes` is a boolean and
+  `2024-01-01` a date), so existing files read the same and re-save without churn.
+- `storage.py`: atomic writes, edit-conflict revisions, and `project_lock`. Sync endpoints run on
+  a thread pool, so every read-modify-write of a project's files holds that project's lock. The
+  lock is per process: run one server process per data directory.
+- `services/metadata.py`: `metadata.json`, the copy of a project's database rows (custom fields,
+  bookmarks, comments, trash, images) kept in its folder so the folder can move between
+  instances.
 
 ```bash
 uv sync
