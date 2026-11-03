@@ -1,7 +1,8 @@
 <script lang="ts">
   import { page } from '$app/state';
-  import { enhance } from '$app/forms';
-  import { goto } from '$app/navigation';
+  import { goto, invalidateAll } from '$app/navigation';
+  import { ApiError } from '$lib/api';
+  import { createStory, deleteStory, setStoryTarget } from '$lib/api/stories';
   import { Plus, BookOpen, Trash2, Target } from '@lucide/svelte';
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
@@ -13,6 +14,45 @@
   let title = $state('');
   let description = $state('');
   let editingTarget = $state<string | null>(null);
+  let error = $state('');
+
+  function message(cause: unknown) {
+    return cause instanceof ApiError ? cause.message : 'Could not reach the server. Try again.';
+  }
+
+  async function submitCreate(event: SubmitEvent) {
+    event.preventDefault();
+    error = '';
+    try {
+      const created = await createStory(page.params.id!, title, description);
+      await goto(`/projects/${page.params.id}/stories/${created.storyId}?scene=${created.sceneId}`);
+    } catch (cause) {
+      error = message(cause);
+    }
+  }
+
+  async function submitTarget(event: SubmitEvent, storyId: string) {
+    event.preventDefault();
+    const raw = new FormData(event.currentTarget as HTMLFormElement).get('target');
+    error = '';
+    try {
+      await setStoryTarget(page.params.id!, storyId, Number(raw || 0));
+      editingTarget = null;
+      await invalidateAll();
+    } catch (cause) {
+      error = message(cause);
+    }
+  }
+
+  async function remove(storyId: string) {
+    error = '';
+    try {
+      await deleteStory(page.params.id!, storyId);
+      await invalidateAll();
+    } catch (cause) {
+      error = message(cause);
+    }
+  }
 
   let targets = $derived((page.data?.storyTargets || {}) as Record<string, number>);
 
@@ -43,28 +83,13 @@
     </Button>
   </div>
 
+  {#if error}
+    <p class="mb-4 text-sm text-destructive" role="alert">{error}</p>
+  {/if}
+
   {#if showCreate}
     <div class="mb-6 rounded-lg border border-border bg-card p-4">
-      <form
-        method="POST"
-        action="?/create"
-        use:enhance={() => {
-          return async ({ result, update }) => {
-            if (result.type === 'success') {
-              const d = result.data as { storyId?: string; sceneId?: string };
-              if (d?.storyId && d?.sceneId) {
-                await goto(`/projects/${page.params.id}/stories/${d.storyId}?scene=${d.sceneId}`);
-              } else {
-                showCreate = false;
-                title = '';
-                description = '';
-                await update();
-              }
-            }
-          };
-        }}
-        class="space-y-4"
-      >
+      <form onsubmit={submitCreate} class="space-y-4">
         <div class="space-y-1.5">
           <Label for="title">Title</Label>
           <Input id="title" name="title" type="text" required bind:value={title} />
@@ -74,7 +99,7 @@
           <Textarea id="description" name="description" bind:value={description} />
         </div>
         <div class="flex gap-2">
-          <Button type="submit">Create</Button>
+          <Button type="submit" disabled={!title.trim()}>Create</Button>
           <Button type="button" variant="outline" onclick={() => (showCreate = false)}
             >Cancel</Button
           >
@@ -137,27 +162,24 @@
           >
             <Target class="h-4 w-4" />
           </Button>
-          <form method="POST" action="?/delete">
-            <input type="hidden" name="storyId" value={story.id} />
-            <Button type="submit" variant="ghost" size="icon-sm" aria-label="Delete story">
+          {#if page.data?.role !== 'commenter'}
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Delete story"
+              title="Move to trash"
+              onclick={() => remove(story.id)}
+            >
               <Trash2 class="h-4 w-4 text-destructive" />
             </Button>
-          </form>
+          {/if}
         </div>
 
         {#if editingTarget === story.id}
           <form
-            method="POST"
-            action="?/setTarget"
+            onsubmit={(event) => submitTarget(event, story.id)}
             class="flex items-end gap-2 border-t border-border px-4 py-3"
-            use:enhance={() => {
-              return async ({ result, update }) => {
-                if (result.type === 'success') editingTarget = null;
-                await update({ reset: false });
-              };
-            }}
           >
-            <input type="hidden" name="storyId" value={story.id} />
             <div class="space-y-1">
               <Label for="target-{story.id}" class="text-xs text-muted-foreground">
                 Word target (0 to clear)

@@ -19,6 +19,10 @@ SvelteKit frontend (`npm run dev`).
 - `services/metadata.py`: `metadata.json`, the copy of a project's database rows (custom fields,
   bookmarks, comments, trash, images) kept in its folder so the folder can move between
   instances.
+- `services/stories.py`: stories (`story.json`), chapters and scenes on disk in the old layout.
+  `services/writing.py` counts words the way the editor does and keeps `writing-log.json`.
+- `services/trash.py`: soft delete and restore for entities, stories, chapters, scenes and
+  images, and the daily purge of items older than 30 days.
 
 ```bash
 uv sync

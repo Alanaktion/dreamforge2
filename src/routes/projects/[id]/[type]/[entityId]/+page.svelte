@@ -3,6 +3,7 @@
   import { page } from '$app/state';
   import { api, ApiError } from '$lib/api';
   import { deleteEntity, entityPath, splitList, type FieldValue } from '$lib/api/entities';
+  import { noteToScene } from '$lib/api/stories';
   import NotPorted from '$lib/components/NotPorted.svelte';
   import { beforeNavigate, goto, invalidateAll } from '$app/navigation';
   import { ENTITY_LABELS, ENTITY_PLURAL, type FieldDef } from '$lib/entityFields';
@@ -334,6 +335,23 @@
 
   const here = () => entityPath(page.params.id!, entityType, page.params.entityId!);
 
+  async function convertToScene() {
+    if (!convertStoryId) {
+      actionError = 'Pick a story first.';
+      return;
+    }
+    if (dirty && !(await save())) return;
+    await act(async () => {
+      const scene = await noteToScene(
+        page.params.id!,
+        page.params.entityId!,
+        convertStoryId,
+        convertChapterId || null
+      );
+      await goto(`/projects/${page.params.id}/stories/${scene.storyId}?scene=${scene.sceneId}`);
+    });
+  }
+
   function toggleBookmark() {
     return act(async () => {
       await api(`${here()}/bookmark`, { method: 'POST' });
@@ -508,7 +526,6 @@
             {/if}
           </span>
         {/if}
-        <!-- Convert to Scene waits for stories to move to the API (legacy convertToScene). -->
         {#if canEdit && page.data?.entityType === 'note' && page.data?.stories?.length}
           <Button variant="outline" onclick={() => (showConvert = !showConvert)}>
             <SwitchCamera class="h-4 w-4" />
@@ -849,7 +866,13 @@
   {#if showConvert && page.data?.entityType === 'note'}
     <div class="mt-4 rounded-lg border border-border bg-card p-4">
       <h3 class="mb-3 text-sm font-medium">Convert Note to Scene</h3>
-      <form class="space-y-3" onsubmit={(e) => e.preventDefault()}>
+      <form
+        class="space-y-3"
+        onsubmit={(e) => {
+          e.preventDefault();
+          void convertToScene();
+        }}
+      >
         <div class="space-y-1">
           <Label for="convertStory" class="text-xs text-muted-foreground">Story</Label>
           <Combobox
@@ -867,12 +890,12 @@
             name="chapterId"
             bind:value={convertChapterId}
             options={[
-              { value: '', label: 'New chapter...' },
+              { value: '', label: 'First chapter (a new one if there is none)' },
               ...(
                 (page.data?.stories || []).find((s: any) => s.id === convertStoryId)?.chapters || []
               ).map((ch: any) => ({ value: ch.id, label: ch.title }))
             ]}
-            placeholder="New chapter..."
+            placeholder="First chapter"
           />
         </div>
         <div class="flex flex-wrap gap-2">

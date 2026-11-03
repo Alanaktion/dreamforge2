@@ -380,3 +380,191 @@ class Palette(Model):
     entities: list[EntitySummary]
     stories: list[PaletteStory]
     scenes: list[PaletteScene]
+
+
+# --- Stories --------------------------------------------------------------------------------
+
+SceneStatus = Literal["draft", "revised", "final"]
+
+
+class StoryOut(Model):
+    id: str
+    title: str
+    description: str | None
+    sort_order: float
+    created_at: str
+    modified_at: str
+
+
+class StoryStats(Model):
+    id: str
+    title: str
+    description: str | None
+    chapter_count: int
+    scene_count: int
+    word_count: int
+    modified_at: str
+
+
+class StoryList(Model):
+    stories: list[StoryStats]
+    story_targets: dict[str, float]
+    project_name: str
+    role: str
+
+
+class StoryCreate(Model):
+    title: Name = ""
+    description: Body = ""
+
+
+class StoryCreated(Model):
+    story_id: str
+    chapter_id: str
+    scene_id: str
+
+
+class StoryUpdate(Model):
+    title: Name = ""
+    description: Body | None = None
+
+
+class StoryTarget(Model):
+    target: float = 0
+
+
+class SceneOut(Model):
+    revision: str
+    id: str
+    chapter_id: str
+    title: str | None
+    status: SceneStatus
+    narrator: str | None
+    time: str | None
+    place: str | None
+    participants: list[str]
+    background_image: str | None
+    summary: str | None
+    plot_threads: list[dict[str, Any]]
+    sort_order: float
+    body: str
+    created_at: str
+    modified_at: str
+
+
+class ChapterOut(Model):
+    id: str
+    story_id: str
+    title: str
+    sort_order: float
+    created_at: str
+    modified_at: str
+
+
+class ChapterWithScenes(ChapterOut):
+    scenes: list[SceneOut]
+
+
+class ImageSummary(Model):
+    id: str
+    filename: str
+    original_name: str
+    alt_text: str | None
+
+
+class PlotBeatOut(Model):
+    id: str | None = None
+    title: str
+    scene_id: str | None = None
+
+
+class PlotlineOut(Model):
+    id: str
+    title: str
+    beats: list[PlotBeatOut]
+
+
+class StoryDetail(Model):
+    story: StoryOut
+    chapters: list[ChapterWithScenes]
+    entities: list[EntitySummary]
+    images: list[ImageSummary]
+    plotlines: list[PlotlineOut]
+    project_name: str
+    role: str
+
+
+class ChapterCreate(Model):
+    title: Name = ""
+
+
+class Reorder(Model):
+    ids: list[Annotated[str, StringConstraints(max_length=100)]]
+
+
+class SceneUpdate(Model):
+    title: Name | None = None
+    status: SceneStatus | None = None
+    narrator: Name | None = None
+    time: Name | None = None
+    place: Name | None = None
+    participants: list[Name] | None = None
+    background_image: Name | None = None
+    summary: Body | None = None
+    body: Body | None = None
+    revision: str | None = None
+    overwrite: bool = False
+
+
+class SceneSaved(Model):
+    revision: str
+    scene: SceneOut
+    warning: str = ""
+
+
+class NoteCreated(Model):
+    note_id: str
+
+
+class ConvertToScene(Model):
+    story_id: str
+    chapter_id: str | None = None
+    new_chapter_title: Name = ""
+
+
+class SceneCreated(Model):
+    story_id: str
+    scene_id: str
+
+
+class ConvertTarget(Model):
+    id: str
+    title: str
+    chapters: list[ChapterOut]
+
+
+# --- Trash ----------------------------------------------------------------------------------
+
+
+class TrashItemOut(Model):
+    id: str
+    entity_id: str
+    entity_type: str
+    kind: str
+    name: str
+    story_id: str | None
+    preview: str
+    mime_type: str | None
+    size: int | None
+    deleted_at: str
+    expires_at: str
+
+
+class TrashList(Model):
+    items: list[TrashItemOut]
+    project_name: str
+    role: str
+
+
+class Deleted(Model):
+    deleted: int

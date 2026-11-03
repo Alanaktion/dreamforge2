@@ -1,7 +1,8 @@
 <script lang="ts">
   import { page } from '$app/state';
-  import { enhance } from '$app/forms';
-  import { goto } from '$app/navigation';
+  import { goto, invalidateAll } from '$app/navigation';
+  import { api, ApiError } from '$lib/api';
+  import type { TrashItem } from './+page';
   import { ENTITY_LABELS } from '$lib/entityFields';
   import { entityTypeToRoute } from '$lib/utils/entityTypes';
   import { formatDate } from '$lib/utils';
@@ -13,6 +14,39 @@
 
   let confirmEmpty = $state(false);
   let emptying = $state(false);
+  let error = $state('');
+  let busy = $state<string | null>(null);
+
+  const trashPath = $derived(`/api/projects/${page.params.id}/trash`);
+  const canEdit = $derived(page.data?.role !== 'commenter');
+
+  async function act(id: string, run: () => Promise<unknown>) {
+    error = '';
+    busy = id;
+    try {
+      await run();
+      await invalidateAll();
+    } catch (cause) {
+      error = cause instanceof ApiError ? cause.message : 'Could not reach the server. Try again.';
+      // Gone already (deleted elsewhere, or its file was missing and the row was dropped):
+      // reload so the list matches the server. The message above stays.
+      if (cause instanceof ApiError && cause.status === 404) await invalidateAll().catch(() => {});
+    } finally {
+      busy = null;
+    }
+  }
+
+  const restore = (item: TrashItem) =>
+    act(item.id, () => api(`${trashPath}/${item.id}/restore`, { method: 'POST' }));
+  const deleteForever = (item: TrashItem) =>
+    act(item.id, () => api(`${trashPath}/${item.id}`, { method: 'DELETE' }));
+
+  async function emptyTrash() {
+    emptying = true;
+    await act('all', () => api(trashPath, { method: 'DELETE' }));
+    emptying = false;
+    confirmEmpty = false;
+  }
 
   const KIND_LABELS: Record<string, string> = {
     image: 'Image',
@@ -21,7 +55,7 @@
     scene: 'Scene'
   };
 
-  function itemLabel(item: any): string {
+  function itemLabel(item: TrashItem): string {
     return (
       KIND_LABELS[item.entityType] ||
       ENTITY_LABELS[item.entityType as EntityType] ||
@@ -29,7 +63,7 @@
     );
   }
 
-  function goToEntity(item: any) {
+  function goToEntity(item: TrashItem) {
     if (item.entityType === 'image') {
       goto(`/projects/${page.params.id}/images/${item.entityId}`);
     } else if (item.entityType === 'story') {
@@ -37,10 +71,10 @@
     } else if (item.entityType === 'chapter' || item.entityType === 'scene') {
       // Chapters and scenes are shown inline within their story page, not at a
       // route of their own.
-      const storyId = item.metadata?.storyId;
+      const storyId = item.storyId;
       if (storyId) goto(`/projects/${page.params.id}/stories/${storyId}`);
     } else {
-      const route = entityTypeToRoute(item.entityType);
+      const route = entityTypeToRoute(item.entityType as EntityType);
       goto(`/projects/${page.params.id}/${route}/${item.entityId}`);
     }
   }
@@ -58,29 +92,16 @@
     </Dialog.Header>
     <Dialog.Footer>
       <Button variant="outline" onclick={() => (confirmEmpty = false)}>Cancel</Button>
-      <form
-        method="POST"
-        action="?/emptyTrash"
-        use:enhance={() => {
-          emptying = true;
-          return async ({ update }) => {
-            await update();
-            emptying = false;
-            confirmEmpty = false;
-          };
-        }}
-      >
-        <Button type="submit" variant="destructive" disabled={emptying}>
-          <Trash2 class="h-4 w-4" />
-          Delete Forever
-        </Button>
-      </form>
+      <Button variant="destructive" disabled={emptying} onclick={emptyTrash}>
+        <Trash2 class="h-4 w-4" />
+        Delete Forever
+      </Button>
     </Dialog.Footer>
   </Dialog.Content>
 </Dialog.Root>
 
 <svelte:head>
-  <title>Trash — {page.data?.project?.name || 'Project'} — DreamForge</title>
+  <title>Trash — {page.data?.projectName || 'Project'} — DreamForge</title>
 </svelte:head>
 
 <div class="mx-auto max-w-4xl p-6">
@@ -90,7 +111,7 @@
       class="mb-4 flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
     >
       <ArrowLeft class="h-4 w-4" />
-      Back to {page.data?.project?.name || 'Project'}
+      Back to {page.data?.projectName || 'Project'}
     </a>
     <div class="flex items-center justify-between">
       <div>
@@ -99,7 +120,7 @@
           Deleted content is stored here for 30 days before automatic permanent deletion.
         </p>
       </div>
-      {#if (page.data?.items || []).length > 0}
+      {#if (page.data?.items || []).length > 0 && canEdit}
         <Button variant="destructive" onclick={() => (confirmEmpty = true)}>
           <Trash2 class="h-4 w-4" />
           Empty Trash
@@ -108,6 +129,10 @@
     </div>
   </div>
 
+  {#if error}
+    <p class="mb-4 text-sm text-destructive" role="alert">{error}</p>
+  {/if}
+
   {#if (page.data?.items || []).length === 0}
     <div class="flex flex-col items-center gap-3 py-16 text-muted-foreground">
       <Trash2 class="h-12 w-12 opacity-30" />
@@ -115,7 +140,7 @@
     </div>
   {:else}
     <div class="space-y-2">
-      {#each page.data.items as item}
+      {#each page.data.items as item (item.id)}
         <div class="rounded-lg border border-border bg-card p-4">
           <div class="flex items-start justify-between">
             <div class="flex-1 min-w-0">
@@ -136,53 +161,34 @@
               </p>
               {#if item.kind === 'image'}
                 <p class="mt-2 text-xs text-muted-foreground">
-                  {item.metadata?.originalName || ''} &middot; {item.metadata?.mimeType || ''}
-                  {#if item.metadata?.size}
-                    &middot; {Math.round(item.metadata.size / 1024)} KB
+                  {item.name} &middot; {item.mimeType || ''}
+                  {#if item.size}
+                    &middot; {Math.round(item.size / 1024)} KB
                   {/if}
                 </p>
-              {:else if item.body}
+              {:else if item.preview}
                 <p class="mt-2 line-clamp-2 text-xs text-muted-foreground">
-                  {item.body.slice(0, 200)}
+                  {item.preview}
                 </p>
               {/if}
             </div>
-            <div class="flex shrink-0 items-center gap-2 ml-4">
-              <form
-                method="POST"
-                action="?/restore"
-                use:enhance={() => {
-                  return async ({ result }) => {
-                    if (result.type === 'success') {
-                      goto(window.location.href);
-                    }
-                  };
-                }}
-              >
-                <input type="hidden" name="trashId" value={item.id} />
-                <Button type="submit" size="sm">
+            {#if canEdit}
+              <div class="flex shrink-0 items-center gap-2 ml-4">
+                <Button size="sm" disabled={busy === item.id} onclick={() => restore(item)}>
                   <RotateCcw class="h-3 w-3" />
                   Restore
                 </Button>
-              </form>
-              <form
-                method="POST"
-                action="?/permanentDelete"
-                use:enhance={() => {
-                  return async ({ result }) => {
-                    if (result.type === 'success') {
-                      goto(window.location.href);
-                    }
-                  };
-                }}
-              >
-                <input type="hidden" name="trashId" value={item.id} />
-                <Button type="submit" variant="outline" size="sm">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={busy === item.id}
+                  onclick={() => deleteForever(item)}
+                >
                   <AlertTriangle class="h-3 w-3" />
                   Delete Forever
                 </Button>
-              </form>
-            </div>
+              </div>
+            {/if}
           </div>
         </div>
       {/each}

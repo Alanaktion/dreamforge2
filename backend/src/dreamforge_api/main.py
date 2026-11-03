@@ -18,9 +18,10 @@ from sqlmodel import Session
 from .config import get_settings
 from .db import UNSAFE_METHODS, get_engine
 from .migrate import migrate
-from .routers import account, admin, auth, entities, health, invites, projects
+from .routers import account, admin, auth, entities, health, invites, projects, stories, trash
 from .services.seed import seed
 from .services.sessions import purge_expired_sessions
+from .services.trash import purge_expired as purge_expired_trash
 from .spa import mount_spa
 from .storage import ConflictError, StorageError
 
@@ -34,6 +35,7 @@ def startup() -> None:
     with Session(get_engine(write=True)) as db:
         seed(db)
         purge_expired_sessions(db)
+    _purge_trash()
     settings = get_settings()
     print(
         f"DreamForge startup complete (database={settings.database_path}, "
@@ -42,7 +44,15 @@ def startup() -> None:
     )
 
 
-async def _purge_sessions_daily() -> None:
+def _purge_trash() -> None:
+    try:
+        with Session(get_engine(write=True)) as db:
+            purge_expired_trash(db)
+    except Exception:  # not fatal: expired items wait for the next run
+        log.exception("Trash purge failed")
+
+
+async def _purge_daily() -> None:
     while True:
         await asyncio.sleep(SESSION_PURGE_SECONDS)
         try:
@@ -50,12 +60,13 @@ async def _purge_sessions_daily() -> None:
                 purge_expired_sessions(db)
         except Exception:  # keep the loop alive; try again tomorrow
             log.exception("Session purge failed")
+        await asyncio.to_thread(_purge_trash)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     startup()
-    task = asyncio.create_task(_purge_sessions_daily())
+    task = asyncio.create_task(_purge_daily())
     yield
     task.cancel()
     with contextlib.suppress(asyncio.CancelledError):
@@ -120,7 +131,7 @@ def create_app() -> FastAPI:
         log.error("Storage error on %s %s: %s", request.method, request.url.path, err)
         return JSONResponse({"detail": str(err)}, status_code=500)
 
-    for module in (health, auth, account, admin, invites, projects, entities):
+    for module in (health, auth, account, admin, invites, projects, entities, stories, trash):
         app.include_router(module.router, prefix="/api")
     app.include_router(health.router)  # /healthz, for existing container health checks
 

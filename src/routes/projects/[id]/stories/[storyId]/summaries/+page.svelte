@@ -1,7 +1,8 @@
 <script lang="ts">
   import { page } from '$app/state';
-  import { deserialize } from '$app/forms';
   import { invalidateAll } from '$app/navigation';
+  import { ApiError } from '$lib/api';
+  import { reorderScenes, updateScene } from '$lib/api/stories';
   import { ArrowLeft } from '@lucide/svelte';
   import SummariesView from '$lib/components/SummariesView.svelte';
 
@@ -13,13 +14,12 @@
   );
 
   async function handleReorder(chapterId: string, sceneIds: string[]) {
-    const form = new FormData();
-    form.set('chapterId', chapterId);
-    form.set('sceneIds', JSON.stringify(sceneIds));
-    await fetch(`/projects/${page.params.id}/stories/${page.params.storyId}?/reorderScenes`, {
-      method: 'POST',
-      body: form
-    });
+    saveError = '';
+    try {
+      await reorderScenes(page.params.id!, page.params.storyId!, chapterId, sceneIds);
+    } catch {
+      saveError = 'Could not reorder the scenes.';
+    }
     await invalidateAll();
   }
 
@@ -39,23 +39,24 @@
     field: string,
     value: string
   ) {
-    const form = new FormData();
-    form.set('chapterId', chapterId);
-    form.set('sceneId', sceneId);
-    form.set('field', field);
-    form.set('value', value);
-    form.set('revision', sceneRevision(sceneId));
+    if (field !== 'summary') return;
     saveError = '';
-    const res = await fetch('?/updateSceneSummary', { method: 'POST', body: form });
-    const result = deserialize(await res.text());
-    if (result.type === 'success') {
+    try {
+      await updateScene(
+        page.params.id!,
+        page.params.storyId!,
+        chapterId,
+        sceneId,
+        { summary: value || null },
+        sceneRevision(sceneId)
+      );
       await invalidateAll();
-      return;
+    } catch (cause) {
+      saveError =
+        cause instanceof ApiError && cause.status === 409
+          ? 'This scene changed elsewhere, so the synopsis was not saved. Copy it, then reload.'
+          : 'Could not save the synopsis.';
     }
-    saveError =
-      result.type === 'failure' && result.status === 409
-        ? 'This scene changed elsewhere, so the synopsis was not saved. Copy it, then reload.'
-        : 'Could not save the synopsis.';
   }
 </script>
 

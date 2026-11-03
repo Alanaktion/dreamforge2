@@ -8,16 +8,18 @@ async function showChapters(page: Page) {
 }
 
 async function signIn(page: Page) {
+  // The first test changes the initial password. Try the changed one first, so later tests
+  // don't each spend a failed attempt against the login throttle.
   await page.goto('/login');
   await page.getByLabel('Email').fill('smoke@example.test');
-  await page.getByLabel('Password', { exact: true }).fill('Smoke-initial-password');
+  await page.getByLabel('Password', { exact: true }).fill(password);
   await page.getByRole('button', { name: 'Log In', exact: true }).click();
   await Promise.race([
     page.waitForURL(/\/(account|projects)$/),
     page.getByText('Invalid email or password', { exact: true }).waitFor()
   ]);
   if (new URL(page.url()).pathname === '/login') {
-    await page.getByLabel('Password', { exact: true }).fill(password);
+    await page.getByLabel('Password', { exact: true }).fill('Smoke-initial-password');
     await page.getByRole('button', { name: 'Log In', exact: true }).click();
     await expect(page).toHaveURL(/\/(account|projects)$/);
   }
@@ -99,9 +101,7 @@ test('entities: awkward names, autosave, relations, bookmarks, comments, undo de
   expect(errors).toEqual([]);
 });
 
-// Needs the story, relations page, export and import endpoints, which have not moved to
-// the FastAPI backend yet. Re-enable as they are ported.
-test.fixme('production login, awkward entities, autosave, relations and project ZIP restore', async ({
+test('stories: autosave, edit conflicts, summaries, export, convert, trash', async ({
   page
 }, testInfo) => {
   const errors: string[] = [];
@@ -109,28 +109,11 @@ test.fixme('production login, awkward entities, autosave, relations and project 
   await signIn(page);
   await page.goto('/projects');
   await page.getByRole('button', { name: 'New Project', exact: true }).first().click();
-  await page.getByLabel('Project Name').fill(`Smoke ${testInfo.project.name}`);
+  await page.getByLabel('Project Name').fill(`Stories ${testInfo.project.name}`);
   await page.getByRole('button', { name: 'Create', exact: true }).click();
   await expect(page).toHaveURL(/\/projects\/[^/]+$/);
   const project = new URL(page.url()).pathname;
-  const types = [
-    'characters',
-    'organizations',
-    'locations',
-    'cultures',
-    'species',
-    'items',
-    'notes'
-  ];
-  for (const [i, type] of types.entries()) {
-    await page.goto(`${project}/${type}`);
-    const quick = page.getByRole('textbox', { name: /^Quick add/ });
-    await quick.fill(['[Untitled]', 'true', 'null', '007', '# hash', '"Never"', '[note]'][i]);
-    await quick.press('Enter');
-    await expect(quick).toHaveValue('');
-    await page.reload();
-    await expect(page.getByText('Internal Error', { exact: true })).toHaveCount(0);
-  }
+
   await page.goto(`${project}/stories`);
   await page.getByRole('button', { name: 'New Story', exact: true }).click();
   await page.getByLabel('Title', { exact: true }).fill('Smoke story');
@@ -141,11 +124,13 @@ test.fixme('production login, awkward entities, autosave, relations and project 
   await page.getByPlaceholder('Chapter title').fill('Chapter true');
   await page.getByRole('button', { name: 'Create', exact: true }).click();
   await page.getByText('Chapter true', { exact: true }).click();
-  // Wait for the reload that opens the new scene, or the fill below races the editor remount.
-  await Promise.all([
-    page.waitForResponse((response) => response.url().includes('__data.json')),
-    page.locator('form[action="?/createScene"] button').last().click()
-  ]);
+  await page.getByRole('button', { name: 'Add Scene' }).last().click();
+  // The story opened its first scene already: wait until the new one is open, or the fill
+  // below races the editor remount.
+  // (CSS, not roles: on a phone the chapter list is hidden while a scene is open.)
+  await expect(
+    page.locator('ol[aria-label="Scenes in Chapter true"] button[aria-current="true"]')
+  ).toHaveCount(1);
   const editor = page.locator('[contenteditable="true"]').first();
   await editor.fill('A scene survives production autosave.');
   await expect(page.getByText('Saved', { exact: true }).first()).toBeVisible();
@@ -194,6 +179,68 @@ test.fixme('production login, awkward entities, autosave, relations and project 
   await expect(page.getByText('A smoke synopsis.', { exact: true })).toBeVisible();
   await expect(page.getByRole('alert')).toHaveCount(0);
 
+  // The manuscript export renders the scene.
+  const exported = await page.request.get(`/api${storyUrl.pathname}/export`);
+  expect(exported.ok()).toBe(true);
+  expect(await exported.text()).toContain('My concurrent draft.');
+
+  // A note converts into a scene of the story.
+  await page.goto(`${project}/notes`);
+  const quick = page.getByRole('textbox', { name: /^Quick add/ });
+  await quick.fill('Harbor idea');
+  await quick.press('Enter');
+  await page.getByRole('main').getByText('Harbor idea', { exact: true }).first().click();
+  await page.getByRole('button', { name: 'Convert to Scene' }).click();
+  await page.getByText('Select a story...').click();
+  await page.getByRole('option', { name: 'Smoke story' }).click();
+  await page.getByRole('button', { name: 'Convert', exact: true }).click();
+  await expect(page).toHaveURL(/\/stories\/[^/]+\?scene=/);
+  await expect(page.getByRole('textbox', { name: 'Scene title' })).toHaveValue('Harbor idea');
+
+  // Deleting the story sends it to the trash, and it comes back from there.
+  await page.goto(`${project}/stories`);
+  await page.getByRole('button', { name: 'Delete story' }).click({ force: true });
+  await expect(page.getByText('Smoke story')).toHaveCount(0);
+  await page.goto(`${project}/trash`);
+  await page.getByRole('button', { name: 'Restore' }).first().click();
+  await expect(page.getByText('Trash is empty')).toBeVisible();
+  await page.goto(`${project}/stories`);
+  await expect(page.getByText('Smoke story')).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+// Needs the relations page, export and import endpoints, which have not moved to
+// the FastAPI backend yet. Re-enable as they are ported.
+test.fixme('production login, awkward entities, autosave, relations and project ZIP restore', async ({
+  page
+}, testInfo) => {
+  const errors: string[] = [];
+  page.on('pageerror', (cause) => errors.push(cause.message));
+  await signIn(page);
+  await page.goto('/projects');
+  await page.getByRole('button', { name: 'New Project', exact: true }).first().click();
+  await page.getByLabel('Project Name').fill(`Smoke ${testInfo.project.name}`);
+  await page.getByRole('button', { name: 'Create', exact: true }).click();
+  await expect(page).toHaveURL(/\/projects\/[^/]+$/);
+  const project = new URL(page.url()).pathname;
+  const types = [
+    'characters',
+    'organizations',
+    'locations',
+    'cultures',
+    'species',
+    'items',
+    'notes'
+  ];
+  for (const [i, type] of types.entries()) {
+    await page.goto(`${project}/${type}`);
+    const quick = page.getByRole('textbox', { name: /^Quick add/ });
+    await quick.fill(['[Untitled]', 'true', 'null', '007', '# hash', '"Never"', '[note]'][i]);
+    await quick.press('Enter');
+    await expect(quick).toHaveValue('');
+    await page.reload();
+    await expect(page.getByText('Internal Error', { exact: true })).toHaveCount(0);
+  }
   await page.goto(`${project}/relations`);
   await expect(page.getByText('Internal Error', { exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: 'Add Relation' }).click();
