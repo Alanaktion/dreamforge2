@@ -252,6 +252,7 @@
   }
 
   function openEdit(event: TimelineEvent) {
+    if (readOnly) return; // commenters can't edit; the SVG markers call this too
     editingEventId = event.id;
     editYear = event.year;
     editMonth = event.month != null ? String(event.month) : '';
@@ -563,10 +564,11 @@
 
         {#each eventPositions() as { event, x, y, label }}
           <g
-            class="cursor-pointer"
+            class={readOnly ? undefined : 'cursor-pointer'}
             onclick={() => openEdit(event)}
             role="button"
-            tabindex="0"
+            aria-disabled={readOnly}
+            tabindex={readOnly ? -1 : 0}
             onkeypress={(e) => {
               if (e.key === 'Enter') openEdit(event);
             }}

@@ -33,6 +33,15 @@
 
   let selectedType = $state<EntityType>('character');
   let dailyGoal = $state(page.data?.dailyGoal ?? 500);
+  // Follow the loaded goal when it changes (another editor, a reload), unless the field holds
+  // an unsaved edit.
+  let loadedGoal = page.data?.dailyGoal ?? 500;
+  $effect.pre(() => {
+    const next = page.data?.dailyGoal ?? 500;
+    if (next === loadedGoal) return;
+    if (dailyGoal === loadedGoal) dailyGoal = next;
+    loadedGoal = next;
+  });
   let goalSaved = $state(false);
   let goalError = $state<string | null>(null);
   let newKey = $state('');
@@ -219,7 +228,7 @@
           onresult: (result: FormResult<WritingProgress>) => {
             if (result.ok) {
               goalError = null;
-              dailyGoal = result.data.dailyGoal;
+              dailyGoal = loadedGoal = result.data.dailyGoal;
               goalSaved = true;
               setTimeout(() => (goalSaved = false), 2000);
             } else goalError = result.error;
