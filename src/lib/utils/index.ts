@@ -42,3 +42,13 @@ export function formatDate(date: string): string {
     day: 'numeric'
   });
 }
+
+export function moveItem<T>(items: T[], item: T, delta: number): T[] | null {
+  const from = items.indexOf(item);
+  const to = from + delta;
+  if (from === -1 || to < 0 || to >= items.length) return null;
+  const next = [...items];
+  next.splice(from, 1);
+  next.splice(to, 0, item);
+  return next;
+}

@@ -1,6 +1,11 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 
 const password = 'Smoke-updated-password';
+async function showChapters(page: Page) {
+  const back = page.getByRole('button', { name: 'Back to chapters' });
+  if (await back.isVisible()) await back.click();
+}
+
 test('production login, awkward entities, autosave, relations and project ZIP restore', async ({
   page
 }, testInfo) => {
@@ -55,6 +60,7 @@ test('production login, awkward entities, autosave, relations and project ZIP re
   await page.getByLabel('Title', { exact: true }).fill('Smoke story');
   await page.getByRole('button', { name: 'Create', exact: true }).click();
   await expect(page).toHaveURL(/\/stories\/[^/]+$/);
+  await showChapters(page);
   await page.getByRole('button', { name: /Add Chapter/ }).click();
   await page.getByPlaceholder('Chapter title').fill('Chapter true');
   await page.getByRole('button', { name: 'Create', exact: true }).click();
@@ -68,12 +74,14 @@ test('production login, awkward entities, autosave, relations and project ZIP re
   await editor.fill('A scene survives production autosave.');
   await expect(page.getByText('Saved', { exact: true }).first()).toBeVisible();
   await page.reload();
+  await showChapters(page);
   await page.getByText('Chapter true', { exact: true }).click();
   await page.getByText('Scene 1', { exact: true }).last().click();
   await expect(editor).toContainText('A scene survives production autosave.');
   const other = await page.context().newPage();
   other.on('pageerror', (cause) => errors.push(cause.message));
   await other.goto(page.url());
+  await showChapters(other);
   await other.getByText('Chapter true', { exact: true }).click();
   await other.getByText('Scene 1', { exact: true }).last().click();
   await expect(other.locator('[contenteditable="true"]').first()).toContainText(
@@ -89,6 +97,7 @@ test('production login, awkward entities, autosave, relations and project ZIP re
   await other.getByRole('button', { name: 'Overwrite with my edits', exact: true }).click();
   await expect(other.getByText('Saved', { exact: true }).first()).toBeVisible();
   await other.reload();
+  await showChapters(other);
   await other.getByText('Chapter true', { exact: true }).click();
   await other.getByText('Scene 1', { exact: true }).last().click();
   await expect(otherEditor).toContainText('My concurrent draft.');
