@@ -225,18 +225,6 @@ def toggle_bookmark(project_id: str, route: str, entity_id: str, auth: CurrentAu
     return {"bookmarked": bookmarks.toggle_bookmark(db, auth.user.id, project, entity_id)}
 
 
-@router.post("/trash/{trash_id}/restore", response_model=Ok)
-def restore(project_id: str, trash_id: str, auth: CurrentAuth, db: Db):
-    project = _editor(db, project_id, auth)
-    try:
-        restored = trash.restore_entity(db, project, trash_id)
-    except trash.NotPortedError as err:
-        raise HTTPException(501, "Restoring this kind of item is not available yet") from err
-    if not restored:
-        raise HTTPException(404, "Nothing to restore")
-    return {}
-
-
 # --- Relations ------------------------------------------------------------------------------
 
 
