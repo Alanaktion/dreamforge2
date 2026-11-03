@@ -1,11 +1,16 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import db from './db';
-import { fileRevision, assertRevision } from './storage';
+import { fileRevision, assertRevision, moveAndWriteAtomic } from './storage';
 import { entities as entitiesTable } from './schema';
 import { eq, and, like, desc } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
-import { readMarkdownFile, writeMarkdownFile, type Frontmatter } from './markdown';
+import {
+  readMarkdownFile,
+  writeMarkdownFile,
+  serializeMarkdown,
+  type Frontmatter
+} from './markdown';
 import { generateId, slugify, isSafePathSegment } from '$lib/utils';
 import type { EntityType } from '$lib/types';
 
@@ -214,11 +219,13 @@ export function createEntity(
     fs.mkdirSync(dir, { recursive: true });
   }
 
-  writeMarkdownFile(path.join(dir, `${slug}.md`), frontmatter as Record<string, unknown>, body);
+  const filePath = path.join(dir, `${slug}.md`);
+  writeMarkdownFile(filePath, frontmatter as Record<string, unknown>, body);
 
   syncEntityToDb(projectId, type, id, frontmatter);
 
   return {
+    revision: fileRevision(filePath),
     id,
     projectId,
     type,
@@ -275,11 +282,7 @@ export function updateEntity(
     const oldPath = resolvedPath;
     const newPath = path.join(dir, `${newSlug}.md`);
 
-    writeMarkdownFile(newPath, frontmatter, body);
-
-    if (fs.existsSync(oldPath)) {
-      fs.unlinkSync(oldPath);
-    }
+    moveAndWriteAtomic(oldPath, newPath, serializeMarkdown(frontmatter, body));
   } else {
     const dir = getEntityDir(projectPath, type);
     const filePath = resolveEntityPath(projectPath, type, id) || path.join(dir, `${newSlug}.md`);

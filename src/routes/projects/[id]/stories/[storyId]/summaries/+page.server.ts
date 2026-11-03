@@ -1,4 +1,5 @@
-import { redirect } from '@sveltejs/kit';
+import { fail, redirect } from '@sveltejs/kit';
+import { ConflictError, expectedRevision } from '$lib/server/storage';
 import { getStoryMeta, listChapters, listScenes, updateScene } from '$lib/server/stories';
 import { listPlotlines } from '$lib/server/plots';
 import { getProjectAccess } from '$lib/server/members';
@@ -39,9 +40,21 @@ export const actions = {
     const field = form.get('field') as string;
     const value = form.get('value') as string;
     if (!isSafePathSegment(chapterId) || !isSafePathSegment(sceneId)) return { success: false };
-    if (field === 'summary') {
-      updateScene(project.dataPath, params.storyId, chapterId, sceneId, { summary: value || null });
+    if (field !== 'summary') return fail(400, { error: 'Field not allowed' });
+    try {
+      const updated = updateScene(
+        project.dataPath,
+        params.storyId,
+        chapterId,
+        sceneId,
+        { summary: value || null },
+        expectedRevision(form)
+      );
+      if (!updated) return fail(404, { error: 'Scene not found' });
+      return { success: true, revision: updated.revision };
+    } catch (cause) {
+      if (cause instanceof ConflictError) return fail(409, { error: cause.message });
+      throw cause;
     }
-    return { success: true };
   }
 };

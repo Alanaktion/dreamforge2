@@ -1,5 +1,7 @@
 <script lang="ts">
   import { page } from '$app/state';
+  import { deserialize } from '$app/forms';
+  import { invalidateAll } from '$app/navigation';
   import { ArrowLeft } from '@lucide/svelte';
   import SummariesView from '$lib/components/SummariesView.svelte';
 
@@ -14,11 +16,21 @@
     const form = new FormData();
     form.set('chapterId', chapterId);
     form.set('sceneIds', JSON.stringify(sceneIds));
-    await fetch('/projects/{page.params.id}/stories/{page.params.storyId}?/reorderScenes', {
+    await fetch(`/projects/${page.params.id}/stories/${page.params.storyId}?/reorderScenes`, {
       method: 'POST',
       body: form
     });
-    window.location.reload();
+    await invalidateAll();
+  }
+
+  let saveError = $state('');
+
+  function sceneRevision(sceneId: string): string {
+    for (const chapter of page.data?.chapters || []) {
+      const scene = chapter.scenes.find((s: { id: string }) => s.id === sceneId);
+      if (scene) return scene.revision ?? '';
+    }
+    return '';
   }
 
   async function handleUpdateSummary(
@@ -32,7 +44,18 @@
     form.set('sceneId', sceneId);
     form.set('field', field);
     form.set('value', value);
-    await fetch('?/updateSceneSummary', { method: 'POST', body: form });
+    form.set('revision', sceneRevision(sceneId));
+    saveError = '';
+    const res = await fetch('?/updateSceneSummary', { method: 'POST', body: form });
+    const result = deserialize(await res.text());
+    if (result.type === 'success') {
+      await invalidateAll();
+      return;
+    }
+    saveError =
+      result.type === 'failure' && result.status === 409
+        ? 'This scene changed elsewhere, so the synopsis was not saved. Copy it, then reload.'
+        : 'Could not save the synopsis.';
   }
 </script>
 
@@ -56,6 +79,15 @@
       {page.data?.projectName || 'Project'} &middot; {page.data?.story?.title || ''}
     </p>
   </div>
+
+  {#if saveError}
+    <p class="mb-4 text-sm text-destructive" role="alert">
+      {saveError}
+      <button type="button" class="underline" onclick={() => window.location.reload()}
+        >Reload</button
+      >
+    </p>
+  {/if}
 
   <SummariesView
     chapters={page.data?.chapters || []}

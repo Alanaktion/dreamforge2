@@ -27,6 +27,21 @@ export function assertRevision(filePath: string, expected?: string): void {
   if (expected !== undefined && expected !== fileRevision(filePath)) throw new ConflictError();
 }
 
+/**
+ * The revision a save form expects to replace. `overwrite=true` skips the check (the user
+ * chose to overwrite after a conflict). A missing or empty revision still gets checked, so a
+ * client that never loaded the file cannot silently overwrite it.
+ */
+export function expectedRevision(form: FormData): string | undefined {
+  if (form.get('overwrite') === 'true') return undefined;
+  return String(form.get('revision') ?? '');
+}
+
+// Concurrency note: every read-modify-write of a project file (relations, timeline, plots,
+// writing log, Markdown frontmatter) is synchronous from read to write, so Node's event loop
+// already serializes them within the one server process that owns the data directory. Keep
+// it that way: an `await` between reading and writing a shared file would need a lock.
+
 export function writeFileAtomic(filePath: string, content: string | Buffer): void {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   const temporary = path.join(
@@ -38,23 +53,45 @@ export function writeFileAtomic(filePath: string, content: string | Buffer): voi
     fd = fs.openSync(
       temporary,
       'wx',
-      fs.existsSync(filePath) ? fs.statSync(filePath).mode & 0o777 : 0o600
+      // Keep an existing file's mode; new files get the usual 0666 & ~umask, like writeFileSync.
+      fs.existsSync(filePath) ? fs.statSync(filePath).mode & 0o777 : 0o666
     );
     fs.writeFileSync(fd, content);
     fs.fsyncSync(fd);
     fs.closeSync(fd);
     fd = undefined;
     fs.renameSync(temporary, filePath);
-    const directory = fs.openSync(path.dirname(filePath), 'r');
-    try {
-      fs.fsyncSync(directory);
-    } finally {
-      fs.closeSync(directory);
-    }
+    syncDirectory(path.dirname(filePath));
   } finally {
     if (fd !== undefined) fs.closeSync(fd);
     if (fs.existsSync(temporary)) fs.unlinkSync(temporary);
   }
+}
+
+/**
+ * Flush a rename to disk. Best effort: the rename has already happened, and some platforms
+ * and filesystems (Windows, some network and FUSE mounts) cannot open or fsync a directory.
+ */
+function syncDirectory(directory: string): void {
+  let fd: number | undefined;
+  try {
+    fd = fs.openSync(directory, 'r');
+    fs.fsyncSync(fd);
+  } catch {
+    // The data is written; only the durability of the directory entry is uncertain.
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd);
+  }
+}
+
+/**
+ * Move a file to a new name in the same directory, then replace its content. A crash part
+ * way leaves either the old file or the moved file, never two copies with the same id.
+ */
+export function moveAndWriteAtomic(from: string, to: string, content: string | Buffer): void {
+  if (fs.existsSync(to)) throw new Error(`Cannot rename: ${to} already exists`);
+  fs.renameSync(from, to);
+  writeFileAtomic(to, content);
 }
 
 export function readJson<T>(

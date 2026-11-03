@@ -60,7 +60,11 @@ test('production login, awkward entities, autosave, relations and project ZIP re
   await page.getByPlaceholder('Chapter title').fill('Chapter true');
   await page.getByRole('button', { name: 'Create', exact: true }).click();
   await page.getByText('Chapter true', { exact: true }).click();
-  await page.locator('form[action="?/createScene"] button').last().click();
+  // Wait for the reload that opens the new scene, or the fill below races the editor remount.
+  await Promise.all([
+    page.waitForResponse((response) => response.url().includes('__data.json')),
+    page.locator('form[action="?/createScene"] button').last().click()
+  ]);
   const editor = page.locator('[contenteditable="true"]').first();
   await editor.fill('A scene survives production autosave.');
   await expect(page.getByText('Saved', { exact: true }).first()).toBeVisible();
@@ -90,6 +94,21 @@ test('production login, awkward entities, autosave, relations and project ZIP re
   await other.getByText('Scene 1', { exact: true }).last().click();
   await expect(otherEditor).toContainText('My concurrent draft.');
   await other.close();
+  // The first tab is now stale. Reloading in place keeps the scene open with the latest text.
+  await editor.fill('A stale edit.');
+  await expect(page.getByText(/This changed elsewhere/).first()).toBeVisible();
+  page.once('dialog', (dialog) => dialog.accept());
+  await page.getByRole('button', { name: 'Reload latest', exact: true }).click();
+  await expect(editor).toContainText('My concurrent draft.');
+  await expect(page.getByText(/This changed elsewhere/)).toHaveCount(0);
+  // A synopsis saved from the summaries page carries the scene revision too.
+  const storyUrl = new URL(page.url());
+  await page.goto(`${storyUrl.pathname}/summaries`);
+  const synopsis = page.getByPlaceholder('Add a synopsis...').last();
+  await synopsis.fill('A smoke synopsis.');
+  await synopsis.blur();
+  await expect(page.getByText('A smoke synopsis.', { exact: true })).toBeVisible();
+  await expect(page.getByRole('alert')).toHaveCount(0);
 
   await page.goto(`${project}/relations`);
   await expect(page.getByText('Internal Error', { exact: true })).toHaveCount(0);
@@ -97,6 +116,8 @@ test('production login, awkward entities, autosave, relations and project ZIP re
   const pickers = page.getByRole('combobox');
   await pickers.nth(0).click();
   await page.getByRole('option', { name: '[Untitled]', exact: true }).click();
+  // Let the first picker's list close, or its options match the second picker's too.
+  await expect(page.getByRole('option')).toHaveCount(0);
   await pickers.nth(1).click();
   await page.getByRole('option', { name: 'true', exact: true }).click();
   await page.getByLabel('Label (optional)').fill('Smoke relation');
