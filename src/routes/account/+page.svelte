@@ -1,7 +1,12 @@
 <script lang="ts">
   import { page } from '$app/state';
-  import { enhance } from '$app/forms';
+  import { goto, invalidateAll } from '$app/navigation';
+  import { apiForm } from '$lib/api';
   import { Button } from '$lib/components/ui/button';
+
+  let saved = $state(false);
+  let error = $state('');
+  let deleteError = $state('');
 </script>
 
 <svelte:head><title>Account — DreamForge</title></svelte:head>
@@ -10,7 +15,22 @@
   {#if page.data.mustChangePassword}<p>
       Change your initial administrator password before continuing.
     </p>{/if}
-  <form method="POST" action="?/update" use:enhance class="grid gap-4">
+  <form
+    use:apiForm={{
+      path: '/api/account',
+      method: 'PATCH',
+      onresult: async (result, form) => {
+        saved = result.ok;
+        error = result.ok ? '' : result.error;
+        if (result.ok) {
+          for (const input of form.querySelectorAll('input[type=password]'))
+            (input as HTMLInputElement).value = '';
+          await invalidateAll();
+        }
+      }
+    }}
+    class="grid gap-4"
+  >
     <label
       >Email <input
         class="w-full rounded border p-2"
@@ -50,8 +70,8 @@
     <label><input type="checkbox" name="logoutOthers" /> Log out other sessions</label>
     <Button type="submit">Save account</Button>
   </form>
-  {#if page.form?.error}<p role="alert">{page.form.error}</p>{/if}
-  {#if page.form?.success}<p role="status">Account saved.</p>
+  {#if error}<p role="alert">{error}</p>{/if}
+  {#if saved}<p role="status">Account saved.</p>
     <a href="/projects">Continue to projects</a>{/if}
 
   <section class="mt-8 space-y-3 rounded-lg border border-destructive/50 p-4">
@@ -68,7 +88,17 @@
         This removes your login, your memberships in shared projects, and your comments. It can't be
         undone.
       </p>
-      <form method="POST" action="?/delete" use:enhance class="grid gap-3">
+      <form
+        use:apiForm={{
+          path: '/api/account',
+          method: 'DELETE',
+          onresult: async (result) => {
+            if (result.ok) await goto('/login', { invalidateAll: true });
+            else deleteError = result.error;
+          }
+        }}
+        class="grid gap-3"
+      >
         <label
           >Password <input
             class="w-full rounded border p-2"
@@ -89,8 +119,8 @@
         <Button type="submit" variant="destructive">Delete my account</Button>
       </form>
     {/if}
-    {#if page.form?.deleteError}<p role="alert" class="text-sm text-destructive">
-        {page.form.deleteError}
+    {#if deleteError}<p role="alert" class="text-sm text-destructive">
+        {deleteError}
       </p>{/if}
   </section>
 </div>

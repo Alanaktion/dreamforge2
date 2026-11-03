@@ -1,6 +1,7 @@
 <script lang="ts">
-  import { enhance } from '$app/forms';
   import { goto } from '$app/navigation';
+  import { apiForm } from '$lib/api';
+  import type { AuthResult } from '$lib/api/types';
   import { page } from '$app/state';
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
@@ -24,16 +25,12 @@
     </div>
 
     <form
-      method="POST"
-      action="?/register"
-      use:enhance={() => {
-        return async ({ result }) => {
-          if (result.type === 'failure') {
-            error = (result.data as { error?: string })?.error || 'Registration failed';
-          } else if (result.type === 'redirect') {
-            goto(result.location);
-          }
-        };
+      use:apiForm={{
+        path: '/api/auth/register',
+        onresult: async (result) => {
+          if (result.ok) await goto((result.data as AuthResult).redirect, { invalidateAll: true });
+          else error = result.error;
+        }
       }}
       class="space-y-4"
     >

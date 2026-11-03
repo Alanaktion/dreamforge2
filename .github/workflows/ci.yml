@@ -17,7 +17,15 @@ jobs:
           node-version: 22
           cache: npm
 
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+
       - run: npm ci
+      - run: uv sync --project backend --locked
+      - run: npm run lint:api
+      - run: npm run test:api
       - run: npx svelte-kit sync
       - run: npm run lint
       - run: npm run check

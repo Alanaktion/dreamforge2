@@ -1,22 +1,30 @@
 <script lang="ts">
   import { page } from '$app/state';
-  import { enhance } from '$app/forms';
+  import { invalidateAll } from '$app/navigation';
+  import { api, ApiError, type ApiOptions } from '$lib/api';
+  import type { AdminUser } from '$lib/api/types';
   import { Button } from '$lib/components/ui/button';
   import { formatDate } from '$lib/utils';
 
-  interface UserRow {
-    id: string;
-    email: string;
-    username: string;
-    isAdmin: boolean;
-    disabled: boolean;
-    createdAt: string;
-    ownedProjects: number;
-    sharedProjects: number;
+  let users = $derived((page.data.users ?? []) as AdminUser[]);
+  let reset = $state<{ userId: string; password: string } | null>(null);
+  let error = $state('');
+
+  async function run(path: string, method: ApiOptions['method'], body: unknown = {}) {
+    error = '';
+    try {
+      const result = await api(path, { method, body });
+      await invalidateAll();
+      return result;
+    } catch (cause) {
+      error = cause instanceof ApiError ? cause.message : 'Could not reach the server.';
+    }
   }
 
-  let users = $derived((page.data.users ?? []) as UserRow[]);
-  let reset = $derived(page.form?.reset as { userId: string; password: string } | undefined);
+  async function resetPassword(userId: string) {
+    const result = await run(`/api/admin/users/${userId}/reset-password`, 'POST');
+    if (result) reset = result as { userId: string; password: string };
+  }
 </script>
 
 <svelte:head><title>Instance admin — DreamForge</title></svelte:head>
@@ -27,8 +35,8 @@
     <p class="text-sm text-muted-foreground">Manage who can use this DreamForge server.</p>
   </div>
 
-  {#if page.form?.error}<p role="alert" class="rounded border border-destructive p-3 text-sm">
-      {page.form.error}
+  {#if error}<p role="alert" class="rounded border border-destructive p-3 text-sm">
+      {error}
     </p>{/if}
 
   <section class="rounded-lg border border-border bg-card p-4" aria-labelledby="registration">
@@ -37,34 +45,21 @@
       Sign-ups are currently <strong>{page.data.registrationOpen ? 'open' : 'closed'}</strong>.
       Invite links work either way.
     </p>
-    <form method="POST" action="?/registration" use:enhance class="flex flex-wrap gap-2">
-      <Button
-        type="submit"
-        name="mode"
-        value="open"
-        variant={page.data.registration === 'open' ? 'default' : 'outline'}>Open</Button
-      >
-      <Button
-        type="submit"
-        name="mode"
-        value="closed"
-        variant={page.data.registration === 'closed' ? 'default' : 'outline'}>Closed</Button
-      >
-      <Button
-        type="submit"
-        name="mode"
-        value="default"
-        variant={page.data.registration === 'default' ? 'default' : 'outline'}
-        >Use PUBLIC_ALLOW_REGISTRATION</Button
-      >
-    </form>
+    <div class="flex flex-wrap gap-2">
+      {#each [['open', 'Open'], ['closed', 'Closed'], ['default', 'Use PUBLIC_ALLOW_REGISTRATION']] as [mode, label] (mode)}
+        <Button
+          variant={page.data.registration === mode ? 'default' : 'outline'}
+          onclick={() => run('/api/admin/registration', 'PUT', { mode })}>{label}</Button
+        >
+      {/each}
+    </div>
   </section>
 
   <section class="rounded-lg border border-border bg-card p-4" aria-labelledby="users">
     <h2 id="users" class="mb-3 text-lg font-semibold">Users ({users.length})</h2>
     {#if reset}
       <div role="status" class="mb-3 rounded border border-primary/50 bg-secondary p-3 text-sm">
-        Temporary password for {users.find((u) => u.id === reset.userId)?.email}:
+        Temporary password for {users.find((u) => u.id === reset?.userId)?.email}:
         <code class="font-mono select-all">{reset.password}</code>. Share it privately; they must
         change it at next login. It won't be shown again.
       </div>
@@ -102,27 +97,24 @@
               <td class="py-2">
                 <div class="flex flex-wrap justify-end gap-1">
                   {#if !self}
-                    <form method="POST" action="?/resetPassword" use:enhance>
-                      <input type="hidden" name="userId" value={user.id} />
-                      <Button type="submit" size="xs" variant="outline">Reset password</Button>
-                    </form>
-                    <form method="POST" action="?/admin" use:enhance>
-                      <input type="hidden" name="userId" value={user.id} />
-                      <input type="hidden" name="admin" value={String(!user.isAdmin)} />
-                      <Button type="submit" size="xs" variant="outline"
-                        >{user.isAdmin ? 'Remove admin' : 'Make admin'}</Button
-                      >
-                    </form>
-                    <form method="POST" action="?/disable" use:enhance>
-                      <input type="hidden" name="userId" value={user.id} />
-                      <input type="hidden" name="disabled" value={String(!user.disabled)} />
-                      <Button
-                        type="submit"
-                        size="xs"
-                        variant={user.disabled ? 'outline' : 'destructive'}
-                        >{user.disabled ? 'Enable' : 'Disable'}</Button
-                      >
-                    </form>
+                    <Button size="xs" variant="outline" onclick={() => resetPassword(user.id)}
+                      >Reset password</Button
+                    >
+                    <Button
+                      size="xs"
+                      variant="outline"
+                      onclick={() =>
+                        run(`/api/admin/users/${user.id}/admin`, 'PUT', { value: !user.isAdmin })}
+                      >{user.isAdmin ? 'Remove admin' : 'Make admin'}</Button
+                    >
+                    <Button
+                      size="xs"
+                      variant={user.disabled ? 'outline' : 'destructive'}
+                      onclick={() =>
+                        run(`/api/admin/users/${user.id}/disabled`, 'PUT', {
+                          value: !user.disabled
+                        })}>{user.disabled ? 'Enable' : 'Disable'}</Button
+                    >
                   {/if}
                 </div>
               </td>

@@ -1,6 +1,9 @@
 <script lang="ts">
   import { page } from '$app/state';
-  import { enhance } from '$app/forms';
+  import { enhance } from '$app/forms'; // only on sections not yet ported (disabled)
+  import { goto } from '$app/navigation';
+  import { api, apiForm, ApiError } from '$lib/api';
+  import NotPorted from '$lib/components/NotPorted.svelte';
   import { ENTITY_LABELS } from '$lib/entityFields';
   import {
     ArrowLeft,
@@ -94,6 +97,18 @@
   let deleteConfirmName = $state('');
   let deleteError = $state<string | null>(null);
 
+  let inviteError = $state<string | null>(null);
+
+  async function call(path: string, method: 'POST' | 'PATCH' | 'DELETE', body: unknown = {}) {
+    memberError = null;
+    try {
+      await api(path, { method, body });
+      await invalidateAll();
+    } catch (cause) {
+      memberError = cause instanceof ApiError ? cause.message : 'Could not reach the server.';
+    }
+  }
+
   let reindexing = $state(false);
   let reindexMessage = $state('');
 
@@ -138,19 +153,17 @@
         Project Details
       </h2>
       <form
-        method="POST"
-        action="?/updateProject"
-        use:enhance={() => {
-          return async ({ result, update }) => {
-            if (result.type === 'success') {
+        use:apiForm={{
+          path: `/api/projects/${page.params.id}`,
+          method: 'PATCH',
+          onresult: async (result) => {
+            if (result.ok) {
               detailsError = null;
               detailsSaved = true;
               setTimeout(() => (detailsSaved = false), 2000);
-            } else if (result.type === 'failure') {
-              detailsError = (result.data?.error as string) || 'An error occurred';
-            }
-            await update();
-          };
+              await invalidateAll();
+            } else detailsError = result.error;
+          }
         }}
         class="space-y-3"
       >
@@ -184,210 +197,218 @@
     <p class="mb-4 text-sm text-muted-foreground">
       Words per day to aim for. Progress toward it shows on the dashboard.
     </p>
-    <form
-      method="POST"
-      action="?/updateDailyGoal"
-      use:enhance={() => {
-        return async ({ result, update }) => {
-          if (result.type === 'success') {
-            goalSaved = true;
-            setTimeout(() => (goalSaved = false), 2000);
-          }
-          await update();
-        };
-      }}
-      class="flex items-end gap-2"
-    >
-      <div class="space-y-1">
-        <Label for="daily-goal" class="text-xs text-muted-foreground">Daily word goal</Label>
-        <Input
-          id="daily-goal"
-          name="dailyGoal"
-          type="number"
-          min="0"
-          step="50"
-          class="w-40"
-          bind:value={dailyGoal}
-        />
-      </div>
-      <Button type="submit">{goalSaved ? 'Saved' : 'Save'}</Button>
-    </form>
-  </div>
-
-  <div class="mb-6">
-    <Label class="mb-2">Entity Type</Label>
-    <div class="flex flex-wrap gap-2">
-      {#each entityTypes as et}
-        <Button
-          variant={selectedType === et ? 'default' : 'outline'}
-          size="sm"
-          onclick={() => (selectedType = et)}
-        >
-          {ENTITY_LABELS[et]}
-        </Button>
-      {/each}
-    </div>
-  </div>
-
-  <div class="mb-8 rounded-lg border border-border bg-card p-4">
-    <h2 class="mb-4 flex items-center gap-2 text-lg font-semibold">
-      <Settings class="h-4 w-4" />
-      Custom Fields — {ENTITY_LABELS[selectedType]}
-    </h2>
-
-    {#if typeFields.length === 0}
-      <p class="mb-4 text-sm text-muted-foreground">
-        No custom fields defined for this entity type.
-      </p>
-    {:else}
-      <div class="mb-4 space-y-2">
-        {#each typeFields as field}
-          <div class="flex items-center justify-between rounded border border-border px-3 py-2">
-            <div class="flex-1">
-              <span class="font-medium">{field.label}</span>
-              <span class="ml-2 text-xs text-muted-foreground">
-                ({field.key} — {field.fieldType}{#if field.required}, required{/if})
-              </span>
-              {#if field.placeholder}
-                <span class="ml-2 text-xs text-muted-foreground"
-                  >placeholder: "{field.placeholder}"</span
-                >
-              {/if}
-            </div>
-            <form method="POST" action="?/deleteField" use:enhance>
-              <input type="hidden" name="fieldId" value={field.id} />
-              <Button
-                type="submit"
-                variant="ghost"
-                size="icon-sm"
-                class="text-destructive hover:text-destructive"
-                aria-label="Delete field"
-              >
-                <Trash2 class="h-4 w-4" />
-              </Button>
-            </form>
-          </div>
-        {/each}
-      </div>
-    {/if}
-
-    <div class="border-t border-border pt-4">
-      <h3 class="mb-3 text-sm font-medium">Add New Field</h3>
+    <NotPorted />
+    <fieldset disabled>
       <form
         method="POST"
-        action="?/addField"
+        action="?/updateDailyGoal"
         use:enhance={() => {
           return async ({ result, update }) => {
             if (result.type === 'success') {
-              fieldError = null;
-              resetForm();
-            } else if (result.type === 'failure') {
-              fieldError = (result.data?.error as string) || 'An error occurred';
+              goalSaved = true;
+              setTimeout(() => (goalSaved = false), 2000);
             }
-            await update({ reset: false });
+            await update();
           };
         }}
-        class="space-y-3"
+        class="flex items-end gap-2"
       >
-        <input type="hidden" name="entityType" value={selectedType} />
-
-        <div class="grid grid-cols-2 gap-3">
-          <div class="space-y-1">
-            <Label for="field-label" class="text-xs text-muted-foreground">Label</Label>
-            <Input
-              id="field-label"
-              name="label"
-              type="text"
-              required
-              bind:value={newLabel}
-              oninput={deriveKey}
-              placeholder="e.g. Age"
-            />
-          </div>
-          <div class="space-y-1">
-            <Label for="field-key" class="text-xs text-muted-foreground">Key</Label>
-            <Input
-              id="field-key"
-              name="key"
-              type="text"
-              required
-              bind:value={newKey}
-              class="font-mono"
-              placeholder="e.g. age"
-            />
-          </div>
-        </div>
-
-        <div class="grid grid-cols-2 gap-3">
-          <div class="space-y-1">
-            <Label for="field-type" class="text-xs text-muted-foreground">Field Type</Label>
-            <Select type="single" bind:value={newFieldType}>
-              <SelectTrigger id="field-type" class="w-full">
-                <SelectValue placeholder="Select type" />
-              </SelectTrigger>
-              <SelectContent>
-                {#each fieldTypes as ft}
-                  <SelectItem value={ft.value}>{ft.label}</SelectItem>
-                {/each}
-              </SelectContent>
-            </Select>
-            <input type="hidden" name="fieldType" value={newFieldType} />
-          </div>
-          <div class="space-y-1">
-            <Label for="field-placeholder" class="text-xs text-muted-foreground">Placeholder</Label>
-            <Input
-              id="field-placeholder"
-              name="placeholder"
-              type="text"
-              bind:value={newPlaceholder}
-              placeholder="Optional placeholder"
-            />
-          </div>
-        </div>
-
-        {#if newFieldType === 'entityRef'}
-          <div class="space-y-1">
-            <Label for="ref-entity-type" class="text-xs text-muted-foreground"
-              >Referenced Entity Type</Label
-            >
-            <Select type="single" bind:value={newRefEntityType}>
-              <SelectTrigger id="ref-entity-type" class="w-full">
-                <SelectValue placeholder="Select type..." />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="">Select type...</SelectItem>
-                {#each entityTypes as et}
-                  <SelectItem value={et}>{ENTITY_LABELS[et]}</SelectItem>
-                {/each}
-              </SelectContent>
-            </Select>
-            <input type="hidden" name="refEntityType" value={newRefEntityType} />
-          </div>
-        {/if}
-
-        <div class="flex items-center gap-2">
-          <input
-            id="field-required"
-            type="checkbox"
-            name="required"
-            value="true"
-            bind:checked={newRequired}
-            class="rounded border-input"
+        <div class="space-y-1">
+          <Label for="daily-goal" class="text-xs text-muted-foreground">Daily word goal</Label>
+          <Input
+            id="daily-goal"
+            name="dailyGoal"
+            type="number"
+            min="0"
+            step="50"
+            class="w-40"
+            bind:value={dailyGoal}
           />
-          <Label for="field-required">Required</Label>
         </div>
-
-        {#if fieldError}
-          <p class="text-sm text-destructive">{fieldError}</p>
-        {/if}
-
-        <Button type="submit">
-          <Plus class="h-4 w-4" />
-          Add Field
-        </Button>
+        <Button type="submit">{goalSaved ? 'Saved' : 'Save'}</Button>
       </form>
-    </div>
+    </fieldset>
   </div>
+
+  <fieldset disabled>
+    <div class="mb-6">
+      <Label class="mb-2">Entity Type</Label>
+      <div class="flex flex-wrap gap-2">
+        {#each entityTypes as et}
+          <Button
+            variant={selectedType === et ? 'default' : 'outline'}
+            size="sm"
+            onclick={() => (selectedType = et)}
+          >
+            {ENTITY_LABELS[et]}
+          </Button>
+        {/each}
+      </div>
+    </div>
+
+    <div class="mb-8 rounded-lg border border-border bg-card p-4">
+      <h2 class="mb-4 flex items-center gap-2 text-lg font-semibold">
+        <Settings class="h-4 w-4" />
+        Custom Fields — {ENTITY_LABELS[selectedType]}
+      </h2>
+      <NotPorted />
+
+      {#if typeFields.length === 0}
+        <p class="mb-4 text-sm text-muted-foreground">
+          No custom fields defined for this entity type.
+        </p>
+      {:else}
+        <div class="mb-4 space-y-2">
+          {#each typeFields as field}
+            <div class="flex items-center justify-between rounded border border-border px-3 py-2">
+              <div class="flex-1">
+                <span class="font-medium">{field.label}</span>
+                <span class="ml-2 text-xs text-muted-foreground">
+                  ({field.key} — {field.fieldType}{#if field.required}, required{/if})
+                </span>
+                {#if field.placeholder}
+                  <span class="ml-2 text-xs text-muted-foreground"
+                    >placeholder: "{field.placeholder}"</span
+                  >
+                {/if}
+              </div>
+              <form method="POST" action="?/deleteField" use:enhance>
+                <input type="hidden" name="fieldId" value={field.id} />
+                <Button
+                  type="submit"
+                  variant="ghost"
+                  size="icon-sm"
+                  class="text-destructive hover:text-destructive"
+                  aria-label="Delete field"
+                >
+                  <Trash2 class="h-4 w-4" />
+                </Button>
+              </form>
+            </div>
+          {/each}
+        </div>
+      {/if}
+
+      <div class="border-t border-border pt-4">
+        <h3 class="mb-3 text-sm font-medium">Add New Field</h3>
+        <form
+          method="POST"
+          action="?/addField"
+          use:enhance={() => {
+            return async ({ result, update }) => {
+              if (result.type === 'success') {
+                fieldError = null;
+                resetForm();
+              } else if (result.type === 'failure') {
+                fieldError = (result.data?.error as string) || 'An error occurred';
+              }
+              await update({ reset: false });
+            };
+          }}
+          class="space-y-3"
+        >
+          <input type="hidden" name="entityType" value={selectedType} />
+
+          <div class="grid grid-cols-2 gap-3">
+            <div class="space-y-1">
+              <Label for="field-label" class="text-xs text-muted-foreground">Label</Label>
+              <Input
+                id="field-label"
+                name="label"
+                type="text"
+                required
+                bind:value={newLabel}
+                oninput={deriveKey}
+                placeholder="e.g. Age"
+              />
+            </div>
+            <div class="space-y-1">
+              <Label for="field-key" class="text-xs text-muted-foreground">Key</Label>
+              <Input
+                id="field-key"
+                name="key"
+                type="text"
+                required
+                bind:value={newKey}
+                class="font-mono"
+                placeholder="e.g. age"
+              />
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 gap-3">
+            <div class="space-y-1">
+              <Label for="field-type" class="text-xs text-muted-foreground">Field Type</Label>
+              <Select type="single" bind:value={newFieldType}>
+                <SelectTrigger id="field-type" class="w-full">
+                  <SelectValue placeholder="Select type" />
+                </SelectTrigger>
+                <SelectContent>
+                  {#each fieldTypes as ft}
+                    <SelectItem value={ft.value}>{ft.label}</SelectItem>
+                  {/each}
+                </SelectContent>
+              </Select>
+              <input type="hidden" name="fieldType" value={newFieldType} />
+            </div>
+            <div class="space-y-1">
+              <Label for="field-placeholder" class="text-xs text-muted-foreground"
+                >Placeholder</Label
+              >
+              <Input
+                id="field-placeholder"
+                name="placeholder"
+                type="text"
+                bind:value={newPlaceholder}
+                placeholder="Optional placeholder"
+              />
+            </div>
+          </div>
+
+          {#if newFieldType === 'entityRef'}
+            <div class="space-y-1">
+              <Label for="ref-entity-type" class="text-xs text-muted-foreground"
+                >Referenced Entity Type</Label
+              >
+              <Select type="single" bind:value={newRefEntityType}>
+                <SelectTrigger id="ref-entity-type" class="w-full">
+                  <SelectValue placeholder="Select type..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">Select type...</SelectItem>
+                  {#each entityTypes as et}
+                    <SelectItem value={et}>{ENTITY_LABELS[et]}</SelectItem>
+                  {/each}
+                </SelectContent>
+              </Select>
+              <input type="hidden" name="refEntityType" value={newRefEntityType} />
+            </div>
+          {/if}
+
+          <div class="flex items-center gap-2">
+            <input
+              id="field-required"
+              type="checkbox"
+              name="required"
+              value="true"
+              bind:checked={newRequired}
+              class="rounded border-input"
+            />
+            <Label for="field-required">Required</Label>
+          </div>
+
+          {#if fieldError}
+            <p class="text-sm text-destructive">{fieldError}</p>
+          {/if}
+
+          <Button type="submit">
+            <Plus class="h-4 w-4" />
+            Add Field
+          </Button>
+        </form>
+      </div>
+    </div>
+  </fieldset>
 
   {#if isOwner}
     <div class="mb-8 rounded-lg border border-border bg-card p-4">
@@ -409,41 +430,35 @@
                   <span class="font-medium text-sm">{member.username}</span>
                   <span class="ml-2 text-xs text-muted-foreground">{member.email}</span>
                 </div>
-                <form
-                  method="POST"
-                  action="?/updateMemberRole"
-                  use:enhance
-                  id="member-role-form-{member.userId}"
+                <Select
+                  type="single"
+                  value={member.role}
+                  onValueChange={(role) =>
+                    call(`/api/projects/${page.params.id}/members/${member.userId}`, 'PATCH', {
+                      role
+                    })}
                 >
-                  <input type="hidden" name="userId" value={member.userId} />
-                  <input type="hidden" name="role" value={member.role} />
-                  <Select
-                    type="single"
-                    value={member.role}
-                    onValueChange={(v) => {
-                      member.role = v;
-                      requestAnimationFrame(() => {
-                        const formEl = document.getElementById(`member-role-form-${member.userId}`);
-                        if (formEl instanceof HTMLFormElement) formEl.requestSubmit();
-                      });
-                    }}
+                  <SelectTrigger
+                    class="text-xs px-2 py-0.5"
+                    aria-label="Role for {member.username}"
                   >
-                    <SelectTrigger class="text-xs px-2 py-0.5">
-                      <SelectValue placeholder="Select role" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="editor">Editor</SelectItem>
-                      <SelectItem value="commenter">Commenter</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </form>
+                    <SelectValue placeholder="Select role" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="editor">Editor</SelectItem>
+                    <SelectItem value="commenter">Commenter</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
-              <form method="POST" action="?/removeMember" use:enhance>
-                <input type="hidden" name="userId" value={member.userId} />
-                <Button type="submit" variant="ghost" size="icon-sm" aria-label="Remove member">
-                  <Trash2 class="h-4 w-4" />
-                </Button>
-              </form>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Remove {member.username}"
+                onclick={() =>
+                  call(`/api/projects/${page.params.id}/members/${member.userId}`, 'DELETE')}
+              >
+                <Trash2 class="h-4 w-4" />
+              </Button>
             </div>
           {/each}
         </div>
@@ -452,18 +467,15 @@
       <div class="border-t border-border pt-4">
         <h3 class="mb-3 text-sm font-medium">Add Member</h3>
         <form
-          method="POST"
-          action="?/addMember"
-          use:enhance={() => {
-            return async ({ result, update }) => {
-              if (result.type === 'success') {
-                memberError = null;
+          use:apiForm={{
+            path: `/api/projects/${page.params.id}/members`,
+            onresult: async (result) => {
+              memberError = result.ok ? null : result.error;
+              if (result.ok) {
                 addMemberQuery = '';
-              } else if (result.type === 'failure') {
-                memberError = (result.data?.error as string) || 'An error occurred';
+                await invalidateAll();
               }
-              await update({ reset: false });
-            };
+            }
           }}
           class="flex flex-col gap-3 sm:flex-row sm:items-end"
         >
@@ -515,9 +527,13 @@
           stop it working.
         </p>
         <form
-          method="POST"
-          action="?/createInvite"
-          use:enhance
+          use:apiForm={{
+            path: `/api/projects/${page.params.id}/invites`,
+            onresult: async (result) => {
+              inviteError = result.ok ? null : result.error;
+              if (result.ok) await invalidateAll();
+            }
+          }}
           class="flex flex-wrap items-end gap-2"
         >
           <label class="space-y-1 text-xs text-muted-foreground">
@@ -558,16 +574,19 @@
                   size="xs"
                   onclick={() => navigator.clipboard?.writeText(url)}>Copy</Button
                 >
-                <form method="POST" action="?/revokeInvite" use:enhance>
-                  <input type="hidden" name="token" value={invite.token} />
-                  <Button type="submit" variant="ghost" size="xs" class="text-destructive"
-                    >Revoke</Button
-                  >
-                </form>
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  class="text-destructive"
+                  onclick={() =>
+                    call(`/api/projects/${page.params.id}/invites/${invite.token}`, 'DELETE')}
+                  >Revoke</Button
+                >
               </li>
             {/each}
           </ul>
         {/if}
+        {#if inviteError}<p class="mt-2 text-sm text-destructive">{inviteError}</p>{/if}
       </div>
     </div>
 
@@ -576,7 +595,8 @@
         <Archive class="h-4 w-4" />
         Backups
       </h2>
-      <div class="flex flex-wrap items-center gap-3">
+      <NotPorted />
+      <fieldset disabled class="flex flex-wrap items-center gap-3">
         <form method="POST" action="?/backup" use:enhance>
           <Button type="submit">Back up now</Button>
         </form>
@@ -586,7 +606,7 @@
           >
           <Button type="submit" variant="outline">Save backup settings</Button>
         </form>
-      </div>
+      </fieldset>
       <ul class="mt-3 space-y-1 text-sm">
         {#each page.data?.backups ?? [] as backup (backup.name)}
           <li>
@@ -597,7 +617,6 @@
           </li>
         {:else}<li class="text-muted-foreground">No backups yet.</li>{/each}
       </ul>
-      {#if page.form?.error}<p role="alert" class="mt-2 text-destructive">{page.form.error}</p>{/if}
     </div>
 
     <div class="rounded-lg border border-destructive/50 bg-card p-4">
@@ -610,17 +629,13 @@
         cannot be undone.
       </p>
       <form
-        method="POST"
-        action="?/deleteProject"
-        use:enhance={() => {
-          return async ({ result }) => {
-            if (result.type === 'failure') {
-              deleteError = (result.data?.error as string) || 'An error occurred';
-            } else if (result.type === 'redirect') {
-              deleteError = null;
-              window.location.href = result.location;
-            }
-          };
+        use:apiForm={{
+          path: `/api/projects/${page.params.id}`,
+          method: 'DELETE',
+          onresult: async (result) => {
+            deleteError = result.ok ? null : result.error;
+            if (result.ok) await goto('/projects', { invalidateAll: true });
+          }
         }}
         class="space-y-3"
       >
@@ -659,7 +674,8 @@
           DreamForge watches the project folder and picks up changes on its own. If you edited files
           while the server was stopped and something looks out of date, re-index from disk.
         </p>
-        <Button onclick={reindex} disabled={reindexing} variant="outline">
+        <NotPorted />
+        <Button onclick={reindex} disabled variant="outline">
           <RefreshCw class="h-4 w-4 {reindexing ? 'animate-spin' : ''}" />
           {reindexing ? 'Re-indexing…' : 'Re-index from disk'}
         </Button>

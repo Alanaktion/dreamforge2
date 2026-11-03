@@ -19,7 +19,8 @@ export default defineConfig({
     { name: 'phone', use: { ...devices['iPhone 13'], defaultBrowserType: 'chromium' } }
   ],
   webServer: {
-    command: 'node build/index.js',
+    // FastAPI serves the built SPA and the API together, as in production.
+    command: 'node scripts/run.js start',
     url: 'http://127.0.0.1:4173/healthz',
     reuseExistingServer: false,
     env: {

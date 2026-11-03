@@ -8,3 +8,9 @@ package/
 .env.*
 data/
 .DS_Store
+work/
+backend/.venv/
+backend/.pytest_cache/
+backend/.ruff_cache/
+**/__pycache__/
+!backend/README.md

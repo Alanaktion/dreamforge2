@@ -1,7 +1,10 @@
 <script lang="ts">
   import { page } from '$app/state';
+  import { goto } from '$app/navigation';
+  import { apiForm } from '$lib/api';
   import { Button } from '$lib/components/ui/button';
 
+  let error = $state('');
   let token = $derived(page.params.token ?? '');
   let invite = $derived(
     page.data.invite as { projectName: string; role: string; projectId: string } | null
@@ -29,7 +32,15 @@
       {#if page.data.alreadyMember}
         <Button href="/projects/{invite.projectId}">Open project</Button>
       {:else if page.data.user}
-        <form method="POST" action="?/accept">
+        <form
+          use:apiForm={{
+            path: `/api/invites/${encodeURIComponent(token)}/accept`,
+            onresult: async (result) => {
+              if (result.ok) await goto(`/projects/${(result.data as { id: string }).id}`);
+              else error = result.error;
+            }
+          }}
+        >
           <Button type="submit" class="w-full">Join project</Button>
         </form>
         <p class="text-xs text-muted-foreground">Signed in as {page.data.user.email}</p>
@@ -45,9 +56,7 @@
           >
         </div>
       {/if}
-      {#if page.form?.error}<p role="alert" class="text-sm text-destructive">
-          {page.form.error}
-        </p>{/if}
+      {#if error}<p role="alert" class="text-sm text-destructive">{error}</p>{/if}
     {/if}
   </div>
 </div>
