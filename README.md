@@ -58,15 +58,16 @@ docker compose -f docker-compose.dev.yml up
 
 ## Scripts
 
-| Command           | Description                      |
-| ----------------- | -------------------------------- |
-| `npm run dev`     | Start dev server with hot-reload |
-| `npm run build`   | Production build                 |
-| `npm run preview` | Preview production build         |
-| `npm test`        | Run tests                        |
-| `npm run check`   | Type-check                       |
-| `npm run lint`    | Lint                             |
-| `npm run format`  | Format code                      |
+| Command              | Description                                     |
+| -------------------- | ----------------------------------------------- |
+| `npm run dev`        | Start dev server with hot-reload                |
+| `npm run build`      | Production build                                |
+| `npm run preview`    | Preview production build                        |
+| `npm test`           | Run tests                                       |
+| `npm run check`      | Type-check                                      |
+| `npm run lint`       | Lint                                            |
+| `npm run format`     | Format code                                     |
+| `npm run db:migrate` | Apply database migrations (also run on startup) |
 
 ## Features
 
