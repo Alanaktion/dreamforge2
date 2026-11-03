@@ -36,7 +36,6 @@ export interface Project {
 export interface Preset {
   label: string;
   description: string;
-  available: boolean;
 }
 
 export interface ProjectList {

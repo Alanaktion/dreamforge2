@@ -3,14 +3,9 @@
 Open-source, self-hosted web app for fiction worldbuilding and writing. Markdown-first, with a
 SvelteKit single-page frontend and a FastAPI (Python) backend.
 
-> **Backend rework in progress.** The server is moving from SvelteKit server routes to FastAPI
-> (`backend/`). Sign-in, accounts, instance admin, invites, members, pins, the project list,
-> entities (with custom fields, relations, bookmarks, comments and the command palette),
-> stories (chapters, scenes, summaries, manuscript export, note and scene conversion), plotlines,
-> the timeline, the project dashboard, the daily writing goal, images, search, the relations page
-> and the trash page are on the new backend. CSV import/export, backups and project ZIP
-> import/export are not yet: those pages show "Not available yet". The previous server code is
-> kept under `legacy/routes/` and `src/lib/server/` as the reference for porting.
+> **Backend rework.** The server has moved from SvelteKit server routes to FastAPI
+> (`backend/`), and every page now runs on it. The previous server code in `src/lib/server/` is
+> kept for reference until the rework is merged.
 
 ## Quick Start (Docker)
 
@@ -84,13 +79,12 @@ docker compose -f docker-compose.dev.yml up
 
 ### Layout
 
-| Path                         | What                                                        |
-| ---------------------------- | ----------------------------------------------------------- |
-| `src/`                       | SvelteKit SPA (`adapter-static`, `ssr = false`)             |
-| `src/lib/api/`               | Typed client for the API, and `use:apiForm` for JSON forms  |
-| `backend/src/dreamforge_api` | FastAPI app: `routers/`, `services/`, SQLModel `models.py`  |
-| `backend/.../migrate.py`     | Hand-written SQLite migrations (`PRAGMA user_version`)      |
-| `legacy/routes/`             | Old SvelteKit server routes, kept until each area is ported |
+| Path                         | What                                                       |
+| ---------------------------- | ---------------------------------------------------------- |
+| `src/`                       | SvelteKit SPA (`adapter-static`, `ssr = false`)            |
+| `src/lib/api/`               | Typed client for the API, and `use:apiForm` for JSON forms |
+| `backend/src/dreamforge_api` | FastAPI app: `routers/`, `services/`, SQLModel `models.py` |
+| `backend/.../migrate.py`     | Hand-written SQLite migrations (`PRAGMA user_version`)     |
 
 ## Scripts
 
@@ -146,18 +140,13 @@ will end up in your shell history.
 
 ## Backups and restore
 
-> **Not available during the backend rework.** The FastAPI backend does not run automatic
-> backups or ZIP import/export yet; they return in the next stage of the port. Until then, back
-> up the projects directory and the database file yourself. The description below is how they
-> work once ported.
-
 Automatic ZIP backups run every `BACKUP_INTERVAL` seconds (default 86400), retain
 `BACKUP_RETENTION` archives (default 10), and live in `BACKUP_DIR` (default a
 `backups` directory beside the projects directory). Keep that directory on a
 persistent volume. Project settings provide a per-project enable switch, **Back
 up now**, and downloads. Import a ZIP on the projects page to restore into a new
 project. Uploads are limited to 20 MB, with a 512 MB / 20,000-entry extraction
-limit. Export streams the project files and portable metadata; instance users,
+limit. Export packs the project files and portable metadata; instance users,
 sessions, and membership remain instance-local. Store a database backup separately
 if you need to recover instance accounts and permissions.
 

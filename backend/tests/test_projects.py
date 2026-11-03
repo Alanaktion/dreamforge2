@@ -17,9 +17,8 @@ def test_create_lists_and_writes_files(admin, env):
     assert json.loads((folder / "project.json").read_text())["name"] == "World"
     listing = admin.get("/api/projects").json()
     assert [p["id"] for p in listing["projects"]] == [project_id]
-    assert listing["presets"]["blank"]["available"]
-    assert not listing["presets"]["novel"]["available"]
-    assert admin.post("/api/projects", json={"name": "x", "preset": "novel"}).status_code == 501
+    assert set(listing["presets"]) == {"blank", "novel", "series", "campaign"}
+    assert admin.post("/api/projects", json={"name": "x", "preset": "bogus"}).status_code == 400
 
 
 def test_pins_sort_first(admin):

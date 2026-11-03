@@ -1,10 +1,13 @@
 <script lang="ts">
   import { page } from '$app/state';
-  import { enhance } from '$app/forms';
   import { goto } from '$app/navigation';
+  import { api, ApiError } from '$lib/api';
+  import { cellValue, splitList, type FieldValue } from '$lib/api/entities';
+  import { csvUrl, importCsvRows, type CsvImportResult, type CsvRow } from '$lib/api/transfer';
+  import { parseCSVWithHeaders } from '$lib/csv';
   import { ENTITY_PLURAL } from '$lib/entityFields';
-  import { entityTypeToRoute } from '$lib/utils/entityTypes';
   import type { EntityType } from '$lib/types';
+  import { slugify } from '$lib/utils';
   import { ArrowLeft, Upload } from '@lucide/svelte';
   import { Button } from '$lib/components/ui/button';
   import {
@@ -14,6 +17,7 @@
     SelectTrigger,
     SelectValue
   } from '$lib/components/ui/select';
+  import type { TargetField } from './+page';
 
   const FIELD_TYPE_OPTIONS = [
     { value: 'text', label: 'Text' },
@@ -24,14 +28,22 @@
     { value: 'date', label: 'Date' },
     { value: 'markdown', label: 'Markdown' }
   ];
+  const MAX_ROWS = 5000;
 
   let csvHeaders = $state<string[]>([]);
   let preview = $state<Record<string, string>[]>([]);
-  let rawData = $state('');
+  let rows = $state<Record<string, string>[]>([]);
   let mapping = $state<Record<string, string>>({});
   let newFields = $state<Record<string, { label: string; type: string }>>({});
-  let importResult = $state<{ created: number; updated: number; errors?: string[] } | null>(null);
+  let importResult = $state<CsvImportResult | null>(null);
   let uploading = $state(false);
+  let error = $state<string | null>(null);
+
+  let projectId = $derived(page.params.id ?? '');
+  let route = $derived((page.data?.route as string) ?? '');
+  let targetFields = $derived((page.data?.targetFields ?? []) as TargetField[]);
+  // Only the owner can add fields (as on the settings page).
+  let canAddFields = $derived(page.data?.role === 'owner');
 
   function buildAutoMapping(headers: string[], targetKeys: string[]) {
     const m: Record<string, string> = {};
@@ -43,9 +55,13 @@
     return m;
   }
 
-  function downloadCsv() {
-    const route = entityTypeToRoute(page.data?.entityType || 'character');
-    window.open(`/projects/${page.params.id}/${route}/export-csv`, '_blank');
+  function reset() {
+    csvHeaders = [];
+    preview = [];
+    rows = [];
+    mapping = {};
+    newFields = {};
+    error = null;
   }
 
   function onMappingChange(header: string, value: string) {
@@ -56,6 +72,123 @@
       const updated = { ...newFields };
       delete updated[header];
       newFields = updated;
+    }
+  }
+
+  function message(cause: unknown) {
+    return cause instanceof ApiError ? cause.message : 'Could not reach the server. Try again.';
+  }
+
+  async function readFile(event: Event) {
+    const input = event.currentTarget as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = '';
+    if (!file) return;
+    error = null;
+    uploading = true;
+    try {
+      const data = parseCSVWithHeaders(await file.text());
+      if (data.length === 0) {
+        error = 'The CSV file is empty or has no data rows.';
+      } else if (data.length > MAX_ROWS) {
+        error = `The CSV file has ${data.length} rows. Import at most ${MAX_ROWS} at a time.`;
+      } else {
+        csvHeaders = Object.keys(data[0]);
+        preview = data.slice(0, 5);
+        rows = data;
+        mapping = buildAutoMapping(
+          csvHeaders,
+          targetFields.map((f) => f.key)
+        );
+      }
+    } catch {
+      error = 'Could not read that file.';
+    } finally {
+      uploading = false;
+    }
+  }
+
+  /** Adds the fields the owner asked for; returns the final column-to-field mapping. */
+  async function resolveNewFields(): Promise<Record<string, string>> {
+    const resolved = { ...mapping };
+    const known = new Set(targetFields.map((f) => f.key));
+    for (const [header, def] of Object.entries(newFields)) {
+      if (resolved[header] !== '__new__') continue;
+      const label = def.label.trim();
+      const key = slugify(label);
+      if (!label || !key) {
+        resolved[header] = '';
+        continue;
+      }
+      if (!known.has(key)) {
+        await api(`/api/projects/${projectId}/fields`, {
+          method: 'POST',
+          body: { entityType: page.data?.entityType, key, label, fieldType: def.type }
+        });
+        known.add(key);
+      }
+      resolved[header] = key;
+    }
+    return resolved;
+  }
+
+  /** One CSV row as the API takes it, with values typed by their fields. Several columns
+   * mapped to one field are joined (tags are merged). */
+  function toRow(row: Record<string, string>, resolved: Record<string, string>): CsvRow {
+    const types = new Map(targetFields.map((f) => [f.key, f.type]));
+    for (const [header, def] of Object.entries(newFields)) {
+      if (resolved[header]) types.set(resolved[header], def.type as TargetField['type']);
+    }
+    const mapped: Record<string, string> = {};
+    const tags: string[] = [];
+    let hasTags = false;
+    for (const [header, key] of Object.entries(resolved)) {
+      if (!key || key === '__new__' || row[header] === undefined) continue;
+      const value = row[header];
+      if (key === 'tags') {
+        hasTags = true;
+        tags.push(...splitList(value));
+      } else if (mapped[key] !== undefined) {
+        mapped[key] = `${mapped[key]} ${value}`.trim();
+      } else {
+        mapped[key] = value;
+      }
+    }
+    const { id, name, body, status, ...rest } = mapped;
+    const fields: Record<string, FieldValue> = {};
+    for (const [key, raw] of Object.entries(rest)) {
+      const type = types.get(key);
+      try {
+        fields[key] = cellValue(type, type === 'boolean' ? raw.trim().toLowerCase() : raw);
+      } catch {
+        fields[key] = raw; // not a number: keep the text rather than lose it
+      }
+    }
+    return {
+      id: id?.trim() || undefined,
+      name: name ?? '',
+      body,
+      tags: hasTags ? tags : undefined,
+      status: status?.trim().toLowerCase() || undefined,
+      fields
+    };
+  }
+
+  async function runImport(event: SubmitEvent) {
+    event.preventDefault();
+    error = null;
+    uploading = true;
+    try {
+      const resolved = await resolveNewFields();
+      importResult = await importCsvRows(
+        projectId,
+        route,
+        rows.map((row) => toRow(row, resolved))
+      );
+    } catch (cause) {
+      error = message(cause);
+    } finally {
+      uploading = false;
     }
   }
 </script>
@@ -71,7 +204,7 @@
 <div class="mx-auto max-w-4xl p-6">
   <div class="mb-6">
     <a
-      href="/projects/{page.params.id}/{entityTypeToRoute(page.data?.entityType || 'character')}"
+      href="/projects/{projectId}/{route}"
       class="mb-4 flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
     >
       <ArrowLeft class="h-4 w-4" />
@@ -84,11 +217,15 @@
       Upload a CSV file to create or update {page.data?.entityType
         ? ENTITY_PLURAL[page.data.entityType as EntityType].toLowerCase()
         : 'entities'}. Rows are matched by ID first, then by name.
-      <Button variant="link" class="h-auto p-0 text-sm" onclick={downloadCsv}
-        >Download a CSV template</Button
-      >.
+      <a class="underline" href={csvUrl(projectId, route)} download
+        >Download the current {page.data?.entityType
+          ? ENTITY_PLURAL[page.data.entityType as EntityType].toLowerCase()
+          : 'entities'} as CSV</a
+      > to use as a template.
     </p>
   </div>
+
+  {#if error}<p role="alert" class="mb-4 text-sm text-destructive">{error}</p>{/if}
 
   {#if importResult}
     <div class="mb-6 rounded-lg border border-border bg-card p-6">
@@ -96,7 +233,7 @@
       <p class="text-sm text-muted-foreground">
         Created: {importResult.created} &middot; Updated: {importResult.updated}
       </p>
-      {#if importResult.errors && importResult.errors.length > 0}
+      {#if importResult.errors.length > 0}
         <div class="mt-4">
           <p class="mb-2 text-sm font-medium text-destructive">Errors:</p>
           <ul class="space-y-1">
@@ -110,22 +247,12 @@
         <Button
           onclick={() => {
             importResult = null;
-            csvHeaders = [];
-            preview = [];
-            rawData = '';
-            mapping = {};
-            newFields = {};
+            reset();
           }}
         >
           Import Another File
         </Button>
-        <Button
-          variant="outline"
-          onclick={() => {
-            const route = entityTypeToRoute(page.data?.entityType || 'character');
-            goto(`/projects/${page.params.id}/${route}`);
-          }}
-        >
+        <Button variant="outline" onclick={() => goto(`/projects/${projectId}/${route}`)}>
           Back to List
         </Button>
       </div>
@@ -134,29 +261,12 @@
     <div class="mb-6 rounded-lg border border-border bg-card p-4">
       <h2 class="mb-4 text-lg font-semibold">Map Columns</h2>
       <p class="mb-4 text-xs text-muted-foreground">
-        Map CSV columns to entity fields. Choose "New field..." to create a new field from a column.
-        Leave blank to skip.
+        Map CSV columns to entity fields.{canAddFields
+          ? ' Choose "New field..." to create a new field from a column.'
+          : ''} Leave blank to skip.
       </p>
 
-      <form
-        method="POST"
-        action="?/execute"
-        use:enhance={() => {
-          uploading = true;
-          return async ({ result }) => {
-            uploading = false;
-            if (result.type === 'success') {
-              const d = result.data as { created: number; updated: number; errors?: string[] };
-              importResult = { created: d.created, updated: d.updated, errors: d.errors };
-            }
-          };
-        }}
-        class="space-y-3"
-      >
-        <input type="hidden" name="data" value={rawData} />
-        <input type="hidden" name="mapping" value={JSON.stringify(mapping)} />
-        <input type="hidden" name="newFieldDefs" value={JSON.stringify(newFields)} />
-
+      <form onsubmit={runImport} class="space-y-3">
         <div class="overflow-x-auto">
           <table class="w-full text-sm">
             <thead>
@@ -187,8 +297,10 @@
                       </SelectTrigger>
                       <SelectContent class="text-xs">
                         <SelectItem value="">— Skip —</SelectItem>
-                        <SelectItem value="__new__">— New field... —</SelectItem>
-                        {#each page.data?.targetFields || [] as field}
+                        {#if canAddFields}
+                          <SelectItem value="__new__">— New field... —</SelectItem>
+                        {/if}
+                        {#each targetFields as field}
                           <SelectItem value={field.key}>{field.label}</SelectItem>
                         {/each}
                       </SelectContent>
@@ -251,26 +363,14 @@
         </div>
 
         <p class="text-xs text-muted-foreground">
-          Showing {preview.length} preview rows of {JSON.parse(rawData || '[]').length} total.
+          Showing {preview.length} preview rows of {rows.length} total.
         </p>
 
         <div class="flex gap-2">
           <Button type="submit" disabled={uploading}>
             {uploading ? 'Importing...' : 'Import Data'}
           </Button>
-          <Button
-            type="button"
-            variant="outline"
-            onclick={() => {
-              csvHeaders = [];
-              preview = [];
-              rawData = '';
-              mapping = {};
-              newFields = {};
-            }}
-          >
-            Cancel
-          </Button>
+          <Button type="button" variant="outline" onclick={reset}>Cancel</Button>
         </div>
       </form>
     </div>
@@ -300,30 +400,7 @@
     </div>
   {:else}
     <div class="rounded-lg border border-border bg-card p-6">
-      <form
-        method="POST"
-        action="?/preview"
-        enctype="multipart/form-data"
-        use:enhance={() => {
-          uploading = true;
-          return async ({ result }) => {
-            uploading = false;
-            if (result.type === 'success') {
-              const d = result.data as {
-                csvHeaders: string[];
-                preview: Record<string, string>[];
-                data: string;
-              };
-              csvHeaders = d.csvHeaders;
-              preview = d.preview;
-              rawData = d.data;
-              const targetKeys = (page.data?.targetFields || []).map((f: { key: string }) => f.key);
-              mapping = buildAutoMapping(d.csvHeaders, targetKeys);
-            }
-          };
-        }}
-        class="space-y-4"
-      >
+      <div class="space-y-4">
         {#if uploading}
           <div
             class="flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-border p-8 gap-2"
@@ -331,7 +408,7 @@
             <div
               class="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent"
             ></div>
-            <span class="text-sm text-muted-foreground">Uploading...</span>
+            <span class="text-sm text-muted-foreground">Reading...</span>
           </div>
         {:else}
           <label
@@ -340,20 +417,10 @@
             <Upload class="h-8 w-8 text-muted-foreground" />
             <span class="text-sm text-muted-foreground">Click to upload a CSV file</span>
             <span class="text-xs text-muted-foreground/60">.csv files only</span>
-            <input
-              type="file"
-              name="file"
-              accept=".csv"
-              required
-              class="hidden"
-              onchange={(e) => {
-                const form = (e.target as HTMLInputElement).form;
-                if (form) form.requestSubmit();
-              }}
-            />
+            <input type="file" name="file" accept=".csv" class="hidden" onchange={readFile} />
           </label>
         {/if}
-      </form>
+      </div>
     </div>
   {/if}
 </div>

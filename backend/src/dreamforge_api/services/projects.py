@@ -1,7 +1,7 @@
 """Projects: listing, pins, and the project lifecycle (create, rename, delete).
 
-Ported from src/lib/server/projects.ts, pins.ts and the projects routes. Starter presets
-other than "blank" create stories, plots and notes, which have not been ported yet.
+Ported from src/lib/server/projects.ts, pins.ts and the projects routes. Presets other
+than "blank" are seeded by services/starter.py.
 """
 
 import shutil
@@ -57,7 +57,6 @@ PROJECT_PRESETS = {
         "location sheet.",
     },
 }
-PORTED_PRESETS = {"blank"}
 
 
 def project_out(project: Project, *, pinned: bool, role: ProjectRole) -> dict:

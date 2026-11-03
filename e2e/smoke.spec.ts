@@ -393,7 +393,7 @@ test('images, entity image links, search and the relations page', async ({ page 
   expect(errors).toEqual([]);
 });
 
-test.fixme('production login, awkward entities, autosave, relations and project ZIP restore', async ({
+test('production login, awkward entities, autosave, relations and project ZIP restore', async ({
   page
 }, testInfo) => {
   const errors: string[] = [];
@@ -436,7 +436,7 @@ test.fixme('production login, awkward entities, autosave, relations and project 
   await page.getByLabel('Label (optional)').fill('Smoke relation');
   await page.getByRole('button', { name: 'Create', exact: true }).click();
   await expect(page.getByText('Smoke relation', { exact: true })).toBeVisible();
-  const download = await page.request.get(`${project}/export`);
+  const download = await page.request.get(`/api${project}/export`);
   expect(download.ok()).toBe(true);
   expect(download.headers()['content-type']).toContain('application/zip');
   const zip = await download.body();
@@ -446,9 +446,68 @@ test.fixme('production login, awkward entities, autosave, relations and project 
     .getByLabel('Import project from ZIP')
     .setInputFiles({ name: 'project.zip', mimeType: 'application/zip', buffer: zip });
   await page.getByRole('button', { name: 'Import project', exact: true }).click();
+  // The import opens the new copy.
+  await expect(page).toHaveURL(/\/projects\/[^/]+$/);
+  expect(new URL(page.url()).pathname).not.toBe(project);
+  await page.goto('/projects');
   await expect(
     page.getByRole('link', { name: `Smoke ${testInfo.project.name}`, exact: true })
   ).toHaveCount(2);
+  expect(errors).toEqual([]);
+});
+
+test('starters, the sample world, CSV import and export, and backups', async ({
+  page
+}, testInfo) => {
+  const errors: string[] = [];
+  page.on('pageerror', (cause) => errors.push(cause.message));
+  await signIn(page);
+
+  // A Novel starter comes with a story, a chapter and a story bible.
+  await page.goto('/projects');
+  await page.getByRole('button', { name: 'New Project', exact: true }).first().click();
+  await page.getByLabel('Project Name').fill(`Novel ${testInfo.project.name}`);
+  await page.getByRole('radio', { name: /Novel/ }).check();
+  await page.getByRole('button', { name: 'Create', exact: true }).click();
+  await expect(page).toHaveURL(/\/projects\/[^/]+$/);
+  const project = new URL(page.url()).pathname;
+  await page.goto(`${project}/stories`);
+  await expect(page.getByText('Untitled novel').filter({ visible: true }).first()).toBeVisible();
+  await page.goto(`${project}/notes`);
+  await expect(page.getByText('Story bible').filter({ visible: true }).first()).toBeVisible();
+
+  // CSV: import two characters, one of them twice (the second row updates it).
+  await page.goto(`${project}/characters/import-csv`);
+  await page.locator('input[type=file]').setInputFiles({
+    name: 'people.csv',
+    mimeType: 'text/csv',
+    buffer: Buffer.from('name,tags,age\nAda,"scout, pilot",31\nBo,,40\nada,captain,32\n')
+  });
+  await expect(page.getByText('Map Columns')).toBeVisible();
+  await page.getByRole('button', { name: 'Import Data' }).click();
+  await expect(page.getByText('Created: 2 · Updated: 1')).toBeVisible();
+  const csv = await page.request.get(`/api${project}/csv/characters`);
+  expect(csv.ok()).toBe(true);
+  const text = await csv.text();
+  expect(text).toContain('captain');
+  expect(text).toContain('Bo,');
+
+  // Backups: back up now, then the backup is listed and downloads as a ZIP.
+  await page.goto(`${project}/settings`);
+  await page.getByRole('button', { name: 'Back up now' }).click();
+  const backup = page.locator('a[href*="/backups/backup-"]');
+  await expect(backup).toHaveCount(1);
+  const zip = await page.request.get((await backup.getAttribute('href')) ?? '');
+  expect(zip.headers()['content-type']).toContain('application/zip');
+
+  // The sample world opens straight into a populated project.
+  await page.goto('/projects');
+  await page.getByRole('button', { name: 'New Project', exact: true }).first().click();
+  await page.getByRole('button', { name: /explore a sample world/i }).click();
+  await expect(page).toHaveURL(/\/projects\/[^/]+$/);
+  await page.goto(`${new URL(page.url()).pathname}/characters`);
+  await expect(page.getByText('Maren Holt').filter({ visible: true }).first()).toBeVisible();
+
   expect(errors).toEqual([]);
 });
 

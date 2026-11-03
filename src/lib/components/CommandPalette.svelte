@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { projectExportUrl } from '$lib/api/transfer';
   import { page } from '$app/state';
   import { goto } from '$app/navigation';
   import * as Command from '$lib/components/ui/command/index.js';
@@ -150,7 +151,7 @@
         group: 'View',
         icon: Download,
         keywords: ['download', 'backup', 'archive'],
-        run: () => (window.location.href = `${base}/export`)
+        run: () => window.location.assign(projectExportUrl(projectId))
       }
     ];
 
