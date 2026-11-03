@@ -115,7 +115,7 @@ Entity fields are declared declaratively in `src/lib/entityFields.ts` — routes
 - Do NOT change package manager (npm only)
 - Do NOT add new dependencies without checking if existing ones can do the job
 - archiver is on v8, which removed the default function export — import the named `ZipArchive` export instead
-- Do NOT suppress `a11y_` warnings in component code — they're handled globally in `svelte.config.js`
+- Do NOT suppress `a11y_` warnings — fix them. `npm run check` and the build report them; keep both at zero
 
 ## Docker
 

@@ -47,7 +47,7 @@
     final: 'Final'
   };
   const STATUS_DOTS: Record<SceneStatus, string> = {
-    draft: 'bg-muted-foreground/40',
+    draft: 'bg-muted-foreground',
     revised: 'bg-amber-500',
     final: 'bg-emerald-500'
   };

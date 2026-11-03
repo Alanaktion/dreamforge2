@@ -278,7 +278,13 @@
     </Select>
   </div>
   <div class="relative overflow-hidden rounded-lg border border-border bg-card">
-    <div bind:this={container} style="width: 100%; height: 450px;"></div>
+    <div
+      bind:this={container}
+      role="img"
+      aria-label="Relation graph with {graph.nodes.length} entries and {graph.edges
+        .length} relations. The same relations are listed below the graph."
+      style="width: 100%; height: min(450px, 60vh);"
+    ></div>
     {#if renderError}
       <div
         class="pointer-events-none absolute inset-0 flex items-center justify-center p-6 text-center text-sm text-muted-foreground"

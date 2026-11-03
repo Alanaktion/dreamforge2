@@ -331,8 +331,9 @@
   {#if rows.length === 0}
     <p class="py-12 text-center text-muted-foreground">{emptyMessage}</p>
   {:else}
-    <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
     <table
+      role="grid"
+      aria-label="Entries. Use arrow keys to move, Enter to edit, Escape to cancel."
       class="w-full text-sm min-w-max border-separate border-spacing-0"
       use:stickyColumns
       onkeydown={onGridKeydown}

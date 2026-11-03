@@ -1,8 +1,17 @@
 <script lang="ts">
-  import { GripVertical, FileText, Circle, CircleCheckBig, Clock } from '@lucide/svelte';
+  import {
+    GripVertical,
+    FileText,
+    Circle,
+    CircleCheckBig,
+    Clock,
+    ArrowUp,
+    ArrowDown
+  } from '@lucide/svelte';
+  import { moveItem } from '$lib/utils';
 
   const STATUS_DOTS: Record<string, string> = {
-    draft: 'bg-muted-foreground/40',
+    draft: 'bg-muted-foreground',
     revised: 'bg-amber-500',
     final: 'bg-emerald-500'
   };
@@ -57,6 +66,15 @@
     draggedScene = null;
   }
 
+  function moveScene(chapter: ChapterSummary, sceneId: string, delta: number) {
+    const ids = moveItem(
+      chapter.scenes.map((s) => s.id),
+      sceneId,
+      delta
+    );
+    if (ids) onReorder?.(chapter.id, ids);
+  }
+
   function handleDragOver(e: DragEvent) {
     e.preventDefault();
     if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
@@ -77,17 +95,19 @@
       <div class="border-b border-border px-4 py-2">
         <h3 class="font-medium">{chapter.title}</h3>
       </div>
-      <div class="divide-y divide-border">
-        {#each chapter.scenes as scene}
-          <div
+      <ol class="divide-y divide-border" aria-label="Scenes in {chapter.title}">
+        {#each chapter.scenes as scene, j (scene.id)}
+          <li
             class="flex items-start gap-3 px-4 py-3"
             draggable="true"
-            role="listitem"
             ondragstart={(e) => handleDragStart(e, scene.id, chapter.id)}
             ondragover={handleDragOver}
             ondrop={(e) => handleSceneDrop(e, chapter.id, scene.id)}
           >
-            <GripVertical class="mt-1 h-4 w-4 cursor-grab text-muted-foreground opacity-40" />
+            <GripVertical
+              class="mt-1 h-4 w-4 cursor-grab text-muted-foreground opacity-40"
+              aria-hidden="true"
+            />
             <div class="flex-1 min-w-0">
               <div class="flex items-center gap-2">
                 <FileText class="h-4 w-4 text-muted-foreground" />
@@ -95,12 +115,39 @@
                 <span
                   class="h-1.5 w-1.5 rounded-full {STATUS_DOTS[scene.status || 'draft']}"
                   title={scene.status || 'draft'}
+                  aria-hidden="true"
                 ></span>
+                <span class="sr-only">({scene.status || 'draft'})</span>
+                {#if onReorder}
+                  <span class="ml-auto flex items-center">
+                    <button
+                      type="button"
+                      class="rounded p-1 text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-30"
+                      aria-label="Move {scene.title || 'Untitled Scene'} up"
+                      title="Move up"
+                      disabled={j === 0}
+                      onclick={() => moveScene(chapter, scene.id, -1)}
+                    >
+                      <ArrowUp class="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      class="rounded p-1 text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-30"
+                      aria-label="Move {scene.title || 'Untitled Scene'} down"
+                      title="Move down"
+                      disabled={j === chapter.scenes.length - 1}
+                      onclick={() => moveScene(chapter, scene.id, 1)}
+                    >
+                      <ArrowDown class="h-3.5 w-3.5" />
+                    </button>
+                  </span>
+                {/if}
               </div>
               {#if scene.summary}
                 <p class="mt-1 text-xs text-muted-foreground">{scene.summary}</p>
               {:else}
                 <textarea
+                  aria-label="Synopsis for {scene.title || 'Untitled Scene'}"
                   class="mt-1 w-full rounded border border-input bg-background px-2 py-1 text-xs"
                   rows="2"
                   placeholder="Add a synopsis..."
@@ -144,9 +191,9 @@
                 {/if}
               {/if}
             </div>
-          </div>
+          </li>
         {/each}
-      </div>
+      </ol>
     </div>
   {/each}
 </div>
