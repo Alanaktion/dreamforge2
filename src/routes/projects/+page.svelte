@@ -9,7 +9,8 @@
     FolderOpen,
     BookOpen,
     Users,
-    Map
+    Map,
+    Sparkles
   } from '@lucide/svelte';
   import { cn, formatDate } from '$lib/utils';
   import { Button } from '$lib/components/ui/button';
@@ -22,6 +23,7 @@
   let name = $state('');
   let description = $state('');
   let creating = $state(false);
+  let presetChoice = $state('blank');
 </script>
 
 {#snippet summaryLine(project: {
@@ -80,6 +82,22 @@
           <Label for="description">Description</Label>
           <Textarea id="description" name="description" bind:value={description} />
         </div>
+        <fieldset class="space-y-2">
+          <legend class="text-sm font-medium">Start from</legend>
+          <div class="grid gap-2 sm:grid-cols-2">
+            {#each Object.entries((page.data?.presets ?? {}) as Record<string, { label: string; description: string }>) as [value, preset] (value)}
+              <label
+                class="flex cursor-pointer gap-2 rounded-lg border border-border p-3 text-sm has-[:checked]:border-primary has-[:checked]:bg-secondary"
+              >
+                <input type="radio" name="preset" {value} bind:group={presetChoice} class="mt-1" />
+                <span>
+                  <span class="block font-medium">{preset.label}</span>
+                  <span class="block text-xs text-muted-foreground">{preset.description}</span>
+                </span>
+              </label>
+            {/each}
+          </div>
+        </fieldset>
         <div class="flex gap-2">
           <Button type="submit" disabled={creating}>Create</Button>
           <Button type="button" variant="outline" onclick={() => (showCreate = false)}
@@ -87,20 +105,15 @@
           >
         </div>
       </form>
+      <form method="POST" action="?/sample" use:enhance class="mt-3 border-t border-border pt-3">
+        <Button type="submit" variant="link" size="sm" class="px-0">
+          <Sparkles class="h-4 w-4" />
+          Or explore a sample world first
+        </Button>
+      </form>
     </div>
   {/if}
 
-  <form
-    method="POST"
-    action="?/import"
-    enctype="multipart/form-data"
-    use:enhance
-    class="mb-6 space-y-2"
-  >
-    <Label for="archive">Import project from ZIP (up to 20 MB)</Label>
-    <input id="archive" name="archive" type="file" accept=".zip" required />
-    <Button type="submit" variant="outline">Import project</Button>
-  </form>
   {#if page.form?.error}<p role="alert" class="text-destructive">{page.form.error}</p>{/if}
   <div class="space-y-3">
     {#if (page.data?.projects?.length ?? 0) === 0 && (page.data?.sharedProjects?.length ?? 0) === 0}
@@ -151,10 +164,22 @@
             </div>
           </div>
         </div>
-        <Button onclick={() => (showCreate = true)} size="lg">
-          <Plus class="h-4 w-4" />
-          Create Your First Project
-        </Button>
+        <div class="flex flex-wrap justify-center gap-2">
+          <Button onclick={() => (showCreate = true)} size="lg">
+            <Plus class="h-4 w-4" />
+            Create Your First Project
+          </Button>
+          <form method="POST" action="?/sample" use:enhance>
+            <Button type="submit" size="lg" variant="outline">
+              <Sparkles class="h-4 w-4" />
+              Explore a sample world
+            </Button>
+          </form>
+        </div>
+        <p class="mt-3 max-w-md text-xs text-muted-foreground">
+          The sample is a normal project with a few characters, places, a two-chapter story,
+          relations, and a timeline. Delete it from its Settings page whenever you like.
+        </p>
       </div>
     {/if}
 
@@ -236,4 +261,18 @@
       </div>
     {/if}
   </div>
+  <details class="mt-8 rounded-lg border border-border p-4 text-sm">
+    <summary class="cursor-pointer font-medium">Import a project</summary>
+    <form
+      method="POST"
+      action="?/import"
+      enctype="multipart/form-data"
+      use:enhance
+      class="mt-3 space-y-2"
+    >
+      <Label for="archive">Import project from ZIP (up to 20 MB)</Label>
+      <input id="archive" name="archive" type="file" accept=".zip" required />
+      <Button type="submit" variant="outline">Import project</Button>
+    </form>
+  </details>
 </div>

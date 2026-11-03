@@ -449,7 +449,8 @@
     <div class="flex flex-col items-center gap-3 py-16 text-muted-foreground">
       <Clock class="h-12 w-12 opacity-30" />
       <p class="text-sm">
-        No timeline events yet. Add your first one to start building a chronology.
+        No timeline events yet. A timeline keeps your world's history straight, so you always know
+        what happened before a scene. Add the first event to start a chronology.
       </p>
     </div>
   {:else if filteredEvents.length === 0}

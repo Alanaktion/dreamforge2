@@ -136,6 +136,7 @@ test('production login, awkward entities, autosave, relations and project ZIP re
   expect(download.headers()['content-type']).toContain('application/zip');
   const zip = await download.body();
   await page.goto('/projects');
+  await page.getByText('Import a project', { exact: true }).click();
   await page
     .getByLabel('Import project from ZIP')
     .setInputFiles({ name: 'project.zip', mimeType: 'application/zip', buffer: zip });

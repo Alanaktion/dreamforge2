@@ -102,8 +102,9 @@
 
   <div class="space-y-3">
     {#if (page.data?.plotlines || []).length === 0}
-      <p class="py-12 text-center text-muted-foreground">
-        No plotlines yet. Create one to get started.
+      <p class="mx-auto max-w-md py-12 text-center text-muted-foreground">
+        No plotlines yet. A plotline lists the beats of your story, from a template like Save the
+        Cat or your own, and links each beat to the scene that delivers it.
       </p>
     {/if}
 

@@ -117,7 +117,10 @@
     {#if (page.data?.images || []).length === 0}
       <div class="flex flex-col items-center gap-3 py-16 text-muted-foreground">
         <Image class="h-12 w-12 opacity-30" />
-        <p class="text-sm">No images yet</p>
+        <p class="max-w-md text-center text-sm">
+          No images yet. Upload portraits, maps, and mood boards, then attach them to entries or use
+          them as focus mode backgrounds.
+        </p>
       </div>
     {:else}
       <div class="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">

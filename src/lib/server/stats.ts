@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import { ENTITY_DIRS, getEntityDir, listEntities } from './entities';
 import { listStories, listChapters, listScenes } from './stories';
+import { loadRelations } from './relations';
 import { countWords } from '$lib/utils/wordCount';
 import { entityTypeToRoute } from '$lib/utils/entityTypes';
 import type { EntityType, ProjectStats, RecentItem, StoryStats } from '$lib/types';
@@ -149,5 +150,29 @@ export function getProjectSummary(projectPath: string): ProjectSummary {
     entityCount,
     storyCount: stories.length,
     wordCount: stories.reduce((sum, s) => sum + s.wordCount, 0)
+  };
+}
+
+export interface GettingStarted {
+  character: boolean;
+  scene: boolean;
+  relation: boolean;
+  mention: boolean;
+}
+
+export function getGettingStarted(stats: ProjectStats, projectPath: string): GettingStarted {
+  let mention = false;
+  outer: for (const story of listStories(projectPath))
+    for (const chapter of listChapters(projectPath, story.id))
+      for (const scene of listScenes(projectPath, story.id, chapter.id))
+        if (scene.body.includes('](mention://')) {
+          mention = true;
+          break outer;
+        }
+  return {
+    character: (stats.entityCounts.character ?? 0) > 0,
+    scene: stats.wordCount > 0,
+    relation: loadRelations(projectPath).length > 0,
+    mention
   };
 }

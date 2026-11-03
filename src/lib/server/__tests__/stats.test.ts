@@ -11,7 +11,8 @@ const { testDb } = vi.hoisted(() => {
 vi.mock('../db', () => ({ default: testDb }));
 
 import { migrate } from '../migrate';
-import { getProjectStats, getProjectSummary } from '../stats';
+import { getGettingStarted, getProjectStats, getProjectSummary } from '../stats';
+import { addRelation } from '../relations';
 import { createEntity, ENTITY_DIRS } from '../entities';
 import { createStory, createChapter, createScene, updateScene } from '../stories';
 import { generateId } from '$lib/utils';
@@ -143,5 +144,30 @@ describe('getProjectSummary', () => {
     updateScene(tmpDir, story.id, chapter.id, scene.id, { body: 'one two three' });
 
     expect(getProjectSummary(tmpDir)).toEqual({ entityCount: 2, storyCount: 1, wordCount: 3 });
+  });
+});
+
+describe('getGettingStarted', () => {
+  it('tracks the first character, scene, relation, and mention', () => {
+    let steps = getGettingStarted(getProjectStats(PROJECT_ID, tmpDir), tmpDir);
+    expect(steps).toEqual({ character: false, scene: false, relation: false, mention: false });
+
+    const holly = createEntity(PROJECT_ID, tmpDir, 'character', { name: 'Holly' });
+    const keep = createEntity(PROJECT_ID, tmpDir, 'location', { name: 'Keep' });
+    addRelation(tmpDir, {
+      sourceId: holly.id,
+      targetId: keep.id,
+      relationType: 'home',
+      label: null
+    });
+    const story = createStory(tmpDir, 'Road');
+    const chapter = createChapter(tmpDir, story.id, 'One');
+    const scene = createScene(tmpDir, story.id, chapter.id, 'Start');
+    updateScene(tmpDir, story.id, chapter.id, scene.id, {
+      body: `[@Holly](mention://character/${holly.id}) walked home.`
+    });
+
+    steps = getGettingStarted(getProjectStats(PROJECT_ID, tmpDir), tmpDir);
+    expect(steps).toEqual({ character: true, scene: true, relation: true, mention: true });
   });
 });

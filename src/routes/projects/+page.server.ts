@@ -7,9 +7,16 @@ import db from '$lib/server/db';
 import { projects } from '$lib/server/schema';
 import { eq, desc, and } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
-import { generateId } from '$lib/utils';
 import { getMemberProjects } from '$lib/server/members';
-import { getDataDir, resolveProjectPath } from '$lib/server/paths';
+import { resolveProjectPath } from '$lib/server/paths';
+import { createProject } from '$lib/server/projects';
+import {
+  applyPreset,
+  createSampleWorld,
+  isPreset,
+  PROJECT_PRESETS,
+  SAMPLE_WORLD_NAME
+} from '$lib/server/starter';
 import { getProjectSummary } from '$lib/server/stats';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -43,6 +50,7 @@ export const load: PageServerLoad = async ({ locals }) => {
   };
 
   return {
+    presets: PROJECT_PRESETS,
     projects: ownedProjects.map((p) =>
       withSummary({ ...p, pinned: Boolean(p.pinned), isOwner: true })
     ),
@@ -74,59 +82,27 @@ export const actions = {
     if (!locals.user) return fail(401, { error: 'Unauthorized' });
 
     const form = await request.formData();
-    const name = form.get('name') as string;
-    const description = form.get('description') as string;
+    const name = String(form.get('name') || '').trim();
+    const description = String(form.get('description') || '').trim();
+    const preset = form.get('preset') || 'blank';
 
     if (!name) return fail(400, { error: 'Name is required' });
+    if (!isPreset(preset)) return fail(400, { error: 'Unknown starter' });
 
-    const projectId = generateId();
-    const now = new Date().toISOString();
-    const dataPath = path.join(getDataDir(), projectId);
+    const project = createProject(locals.user.id, { name, description });
+    applyPreset(project.id, project.dataPath, preset);
 
-    fs.mkdirSync(dataPath, { recursive: true });
-    fs.mkdirSync(path.join(dataPath, 'characters'), { recursive: true });
-    fs.mkdirSync(path.join(dataPath, 'organizations'), { recursive: true });
-    fs.mkdirSync(path.join(dataPath, 'locations'), { recursive: true });
-    fs.mkdirSync(path.join(dataPath, 'cultures'), { recursive: true });
-    fs.mkdirSync(path.join(dataPath, 'species'), { recursive: true });
-    fs.mkdirSync(path.join(dataPath, 'items'), { recursive: true });
-    fs.mkdirSync(path.join(dataPath, 'notes', '_story'), { recursive: true });
-    fs.mkdirSync(path.join(dataPath, 'notes', '_project'), { recursive: true });
-    fs.mkdirSync(path.join(dataPath, 'images'), { recursive: true });
-    fs.mkdirSync(path.join(dataPath, 'templates'), { recursive: true });
+    redirect(303, `/projects/${project.id}`);
+  },
 
-    writeFileAtomic(
-      path.join(dataPath, 'project.json'),
-      JSON.stringify(
-        {
-          id: projectId,
-          name,
-          description: description || null,
-          createdAt: now,
-          modifiedAt: now
-        },
-        null,
-        2
-      )
-    );
-
-    writeFileAtomic(path.join(dataPath, 'relations.json'), JSON.stringify([], null, 2));
-
-    drizzleDb
-      .insert(projects)
-      .values({
-        id: projectId,
-        userId: locals.user.id,
-        name,
-        description: description || null,
-        dataPath,
-        pinned: false,
-        createdAt: now,
-        modifiedAt: now
-      })
-      .run();
-
-    redirect(303, `/projects/${projectId}`);
+  sample: async ({ locals }) => {
+    if (!locals.user) return fail(401, { error: 'Unauthorized' });
+    const project = createProject(locals.user.id, {
+      name: SAMPLE_WORLD_NAME,
+      description: 'A small example world to explore. Delete it from Settings when you are done.'
+    });
+    createSampleWorld(project.id, project.dataPath);
+    redirect(303, `/projects/${project.id}`);
   },
 
   togglePin: async ({ request, locals }) => {

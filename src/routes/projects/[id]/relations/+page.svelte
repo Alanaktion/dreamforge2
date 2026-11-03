@@ -167,7 +167,8 @@
   </ul>
   {#if (page.data?.relations || []).length === 0}
     <p class="py-12 text-center text-muted-foreground">
-      No relations yet. Add one to start mapping your world.
+      No relations yet. Connect characters, places, and groups to see who is allied with whom, who
+      belongs where, and who owes whom.
     </p>
   {/if}
 </div>

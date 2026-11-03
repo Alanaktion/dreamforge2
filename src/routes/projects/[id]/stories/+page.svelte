@@ -85,7 +85,10 @@
 
   <div class="space-y-3">
     {#if (page.data?.stories || []).length === 0}
-      <p class="py-12 text-center text-muted-foreground">No stories yet.</p>
+      <p class="mx-auto max-w-md py-12 text-center text-muted-foreground">
+        No stories yet. A story holds your chapters and scenes. Start one to begin drafting, and
+        mention characters with @ as you write.
+      </p>
     {/if}
 
     {#each page.data?.stories || [] as story (story.id)}

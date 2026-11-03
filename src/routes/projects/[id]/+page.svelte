@@ -12,7 +12,10 @@
     Clock,
     PenLine,
     Target,
-    Flame
+    Flame,
+    CircleCheck,
+    Circle,
+    X
   } from '@lucide/svelte';
   import Button from '$lib/components/ui/button/button.svelte';
   import { formatWordCount, readingMinutes } from '$lib/utils/wordCount';
@@ -30,6 +33,63 @@
       ? Math.min(100, Math.round((progress.todayWords / progress.dailyGoal) * 100))
       : 0
   );
+  let steps = $derived(
+    page.data?.gettingStarted as
+      { character: boolean; scene: boolean; relation: boolean; mention: boolean } | undefined
+  );
+  let checklist = $derived(
+    steps
+      ? [
+          {
+            done: steps.character,
+            label: 'Create a character',
+            hint: 'Give them a want and a secret.',
+            href: `/projects/${projectId}/characters?new=1`
+          },
+          {
+            done: steps.scene,
+            label: 'Write a scene',
+            hint: 'Even a paragraph counts.',
+            href: `/projects/${projectId}/stories${stats?.storyCount ? '' : '?new=1'}`
+          },
+          {
+            done: steps.relation,
+            label: 'Add a relation',
+            hint: 'Connect two entries to start the relation graph.',
+            href: `/projects/${projectId}/relations`
+          },
+          {
+            done: steps.mention,
+            label: 'Mention someone with @',
+            hint: 'Type @ in a scene to link a character, place, or anything else.',
+            href: stats?.lastScene
+              ? `/projects/${projectId}/stories/${stats.lastScene.storyId}?scene=${stats.lastScene.sceneId}`
+              : `/projects/${projectId}/stories`
+          }
+        ]
+      : []
+  );
+  let stepsDone = $derived(checklist.filter((s) => s.done).length);
+  let dismissed = $state(true);
+  let dismissKey = $derived(`dreamforge:getting-started:${projectId}`);
+
+  $effect(() => {
+    try {
+      dismissed = localStorage.getItem(dismissKey) === 'dismissed';
+    } catch {
+      dismissed = false;
+    }
+  });
+
+  function dismissChecklist() {
+    dismissed = true;
+    try {
+      localStorage.setItem(dismissKey, 'dismissed');
+    } catch {
+      // Preference only.
+    }
+  }
+
   let peakDay = $derived(progress ? Math.max(1, ...progress.recent.map((d) => d.words)) : 1);
 
   const ENTITY_ICONS: Record<EntityType, typeof Users> = {
@@ -58,6 +118,49 @@
       {/if}
     </div>
   </div>
+
+  {#if checklist.length > 0 && stepsDone < checklist.length && !dismissed}
+    <section
+      aria-labelledby="getting-started"
+      class="mb-6 rounded-lg border border-primary/30 bg-card p-4"
+    >
+      <div class="mb-3 flex items-start justify-between gap-2">
+        <div>
+          <h2 id="getting-started" class="text-sm font-semibold">Getting started</h2>
+          <p class="text-xs text-muted-foreground">{stepsDone} of {checklist.length} done</p>
+        </div>
+        <button
+          type="button"
+          class="rounded p-1 text-muted-foreground hover:bg-secondary hover:text-foreground"
+          aria-label="Dismiss getting started"
+          onclick={dismissChecklist}
+        >
+          <X class="h-4 w-4" />
+        </button>
+      </div>
+      <ol class="grid gap-2 sm:grid-cols-2">
+        {#each checklist as step (step.label)}
+          <li>
+            <a
+              href={step.href}
+              class="flex items-start gap-2 rounded-md border border-border p-3 text-sm hover:bg-secondary"
+            >
+              {#if step.done}
+                <CircleCheck class="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />
+                <span class="sr-only">Done:</span>
+              {:else}
+                <Circle class="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+              {/if}
+              <span>
+                <span class="block font-medium" class:line-through={step.done}>{step.label}</span>
+                <span class="block text-xs text-muted-foreground">{step.hint}</span>
+              </span>
+            </a>
+          </li>
+        {/each}
+      </ol>
+    </section>
+  {/if}
 
   {#if stats}
     <div class="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">

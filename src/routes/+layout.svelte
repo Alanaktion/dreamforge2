@@ -1,6 +1,7 @@
 <script lang="ts">
   import '../app.css';
   import { page } from '$app/state';
+  import { afterNavigate } from '$app/navigation';
   import { provideTheme } from '$lib/stores/theme.svelte';
   import { provideZenMode } from '$lib/stores/zenMode.svelte';
   import { provideOverlays } from '$lib/stores/overlays.svelte';
@@ -16,6 +17,14 @@
   provideOverlays();
 
   let { children } = $props();
+
+  let mainEl = $state<HTMLElement | null>(null);
+
+  afterNavigate(({ type, from, to }) => {
+    if (type === 'popstate' || to?.url.hash) return;
+    if (from?.url.pathname === to?.url.pathname) return;
+    mainEl?.scrollTo({ top: 0 });
+  });
 
   let hasSidebar = $derived(!!page.data?.user && !zen.active);
 
@@ -35,7 +44,7 @@
       <Sidebar />
       <div class="flex h-screen min-w-0 flex-1 flex-col">
         <MobileTopBar />
-        <main class="min-h-0 flex-1 overflow-auto">
+        <main bind:this={mainEl} class="min-h-0 flex-1 overflow-auto">
           {#if page.data.storageProblems?.length}
             <aside role="alert" class="m-3 rounded border border-destructive p-3">
               <p>
