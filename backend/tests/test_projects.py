@@ -90,7 +90,13 @@ def test_add_member_by_email_case_insensitive(admin):
 def test_shell(admin):
     project_id = create(admin)
     shell = admin.get(f"/api/projects/{project_id}/shell").json()
-    assert shell == {"projectName": "World", "role": "owner", "entityCounts": {}, "bookmarks": []}
+    assert shell == {
+        "projectName": "World",
+        "role": "owner",
+        "entityCounts": {},
+        "bookmarks": [],
+        "storageProblems": [],
+    }
 
 
 def test_delete_never_removes_folders_outside_data_dir(admin, env):

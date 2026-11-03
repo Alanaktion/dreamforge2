@@ -29,7 +29,6 @@ export const load: LayoutLoad = async ({ fetch, url }) => {
     projectName: shell?.projectName ?? '',
     entityCounts: shell?.entityCounts ?? {},
     bookmarks: shell?.bookmarks ?? [],
-    // Reported by the file scanner, which has not moved to the API yet.
-    storageProblems: [] as Array<{ file: string; message: string }>
+    storageProblems: shell?.storageProblems ?? []
   };
 };

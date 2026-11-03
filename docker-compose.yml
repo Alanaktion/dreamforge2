@@ -21,7 +21,7 @@ services:
       - FORWARDED_ALLOW_IPS=${FORWARDED_ALLOW_IPS:-127.0.0.1}
       # Largest accepted request body in bytes (default 20 MB).
       - BODY_SIZE_LIMIT=${BODY_SIZE_LIMIT:-20971520}
-      # Backups have not moved to the FastAPI server yet; these are read again once they do.
+      # Automatic ZIP backups: where they go, how often (seconds), and how many to keep.
       - BACKUP_DIR=/data/backups
       - BACKUP_INTERVAL=${BACKUP_INTERVAL:-86400}
       - BACKUP_RETENTION=${BACKUP_RETENTION:-10}

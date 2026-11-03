@@ -82,15 +82,55 @@ def _refresh_metadata(project_id: str) -> Path:
         return base
 
 
+SNAPSHOT_MARKER = ".snapshot-"
+
+
+def _snapshot(base: Path) -> Path:
+    """A point-in-time copy of the project folder, beside it, made of hard links.
+
+    Every project write replaces its file (write_file_atomic, rename), never edits it in
+    place, so a hard link keeps the old content however the project changes afterwards.
+    Taking the snapshot is quick, so the project lock is held only for that, not for the
+    compression (a writer waiting on the lock holds the database write lock meanwhile, and
+    every other write on the instance would wait behind it). Falls back to copying where
+    the filesystem has no hard links."""
+    snapshot = base.parent / f".{base.name}{SNAPSHOT_MARKER}{generate_id()}"
+    snapshot.mkdir()
+    try:
+        for path, name in _archived_files(base):
+            target = snapshot / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                os.link(path, target)
+            except OSError:
+                shutil.copy2(path, target)
+    except BaseException:
+        shutil.rmtree(snapshot, ignore_errors=True)
+        raise
+    return snapshot
+
+
+def remove_stale_snapshots() -> None:
+    """Snapshots left behind by a crash mid-archive. Run at startup."""
+    data_dir = get_settings().data_dir
+    if not data_dir.is_dir():
+        return
+    for entry in data_dir.iterdir():
+        if entry.name.startswith(".") and SNAPSHOT_MARKER in entry.name and entry.is_dir():
+            shutil.rmtree(entry, ignore_errors=True)
+
+
 def write_archive(project_id: str, target: IO[bytes]) -> None:
     """The project folder as a ZIP, written to ``target``."""
     base = _refresh_metadata(project_id)
-    with (
-        project_lock(project_id),
-        zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as archive,
-    ):
-        for path, name in _archived_files(base):
-            archive.write(path, name)
+    with project_lock(project_id):
+        snapshot = _snapshot(base)
+    try:
+        with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
+            for path, name in _archived_files(snapshot):
+                archive.write(path, name)
+    finally:
+        shutil.rmtree(snapshot, ignore_errors=True)
 
 
 def archive_filename(project: Project) -> str:

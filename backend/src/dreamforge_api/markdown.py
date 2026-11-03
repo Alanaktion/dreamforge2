@@ -26,6 +26,7 @@ from yaml.resolver import BaseResolver
 from yaml.scanner import Scanner
 from yaml.serializer import Serializer
 
+from .diagnostics import report_file_problem
 from .storage import write_file_atomic
 from .utils import is_safe_path_segment
 
@@ -190,12 +191,23 @@ def read_markdown_file(path: Path) -> tuple[dict[str, Any], str] | None:
         frontmatter, body = parse_markdown(path.read_text("utf-8"))
         if not is_safe_path_segment(frontmatter.get("id")):
             raise MarkdownError("Missing or invalid id")
+        report_file_problem(path)
         return frontmatter, body
     except FileNotFoundError:
+        report_file_problem(path)
         return None
     except (OSError, UnicodeDecodeError, MarkdownError) as cause:
         log.error("Cannot read Markdown: %s (%s)", path, cause)
+        report_file_problem(path, _problem_message(cause))
         return None
+
+
+def _problem_message(cause: BaseException) -> str:
+    if isinstance(cause, UnicodeDecodeError):
+        return "Not valid UTF-8 text"
+    if isinstance(cause, OSError):
+        return cause.strerror or "Cannot read the file"
+    return str(cause).strip() or "Invalid Markdown"
 
 
 def write_markdown_file(path: Path, frontmatter: dict[str, Any], body: str) -> None:

@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException
 
 from ..db import Db
 from ..deps import Auth, CurrentAuth
+from ..diagnostics import project_problems
 from ..models import Project
 from ..schemas import (
     Created,
@@ -110,7 +111,11 @@ def shell(project_id: str, auth: CurrentAuth, db: Db):
     # Files edited outside the app show up on the next page load, as with the old server.
     db.rollback()  # end this read so the counts below see the fresh index
     reindex(project_id)
-    return {**service.sidebar(db, project, auth.user.id), "role": role}
+    return {
+        **service.sidebar(db, project, auth.user.id),
+        "role": role,
+        "storage_problems": project_problems(members.project_path(project)),
+    }
 
 
 @router.post("/{project_id}/pin", response_model=PinResult)

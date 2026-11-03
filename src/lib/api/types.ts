@@ -54,6 +54,8 @@ export interface ProjectShell {
   role: ProjectRole;
   entityCounts: Record<string, number>;
   bookmarks: Array<{ id: string; entityId: string; entityName: string; entityType: string }>;
+  /** Project files the server could not read, relative to the project folder. */
+  storageProblems: Array<{ file: string; message: string }>;
 }
 
 export interface Member {
