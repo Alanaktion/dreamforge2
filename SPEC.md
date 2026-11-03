@@ -160,7 +160,7 @@ All exports are plain Markdown — no proprietary format lock-in.
 | Layer                 | Technology                                   | Rationale                                                                         |
 | --------------------- | -------------------------------------------- | --------------------------------------------------------------------------------- |
 | **Framework**         | Next.js or SvelteKit                         | SSR for SEO-friendly landing pages, API routes for backend.                       |
-| **Database**          | SQLite (via better-sqlite3)                  | Zero-config, file-based, perfect for self-hosted. No external DB needed.          |
+| **Database**          | SQLite (via SQLModel, FastAPI backend)       | Zero-config, file-based, perfect for self-hosted. No external DB needed.          |
 | **Storage**           | Local filesystem (Markdown + JSON)           | Data lives in a folder; users can `git` it, `rsync` it, whatever.                 |
 | **Auth**              | Session cookies (basic) or OAuth2 (optional) | Simple password auth for single-user installs; optional SSO for team/self-hosted. |
 | **Editor**            | Tiptap (ProseMirror-based)                   | Extensible Markdown editor with custom blocks, tables, mentions.                  |

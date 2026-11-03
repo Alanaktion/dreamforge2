@@ -3,10 +3,6 @@
 Open-source, self-hosted web app for fiction worldbuilding and writing. Markdown-first, with a
 SvelteKit single-page frontend and a FastAPI (Python) backend.
 
-> **Backend rework.** The server has moved from SvelteKit server routes to FastAPI
-> (`backend/`), and every page now runs on it. The previous server code in `src/lib/server/` is
-> kept for reference until the rework is merged.
-
 ## Quick Start (Docker)
 
 ```bash
