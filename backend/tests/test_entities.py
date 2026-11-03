@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 
+import pytest
 from conftest import add_user
 from test_projects import create
 
@@ -243,3 +244,62 @@ def test_comments_resolve_and_delete(admin):
     assert admin.get(base, params={"targetType": "entity", "targetId": "e1"}).json()[0]["resolved"]
     assert admin.request("DELETE", f"{base}/{made['id']}").status_code == 200
     assert admin.get(base, params={"targetType": "entity", "targetId": "e1"}).json() == []
+
+
+def test_relation_endpoints_must_exist(admin):
+    project_id = create(admin)
+    ana = new_entity(admin, project_id)
+    base = f"/api/projects/{project_id}/relations"
+    for source, target in ((ana["id"], "missing"), ("missing", ana["id"])):
+        res = admin.post(
+            base, json={"sourceId": source, "targetId": target, "relationType": "friend"}
+        )
+        assert res.status_code == 404
+    orphan = admin.post(
+        base,
+        json={
+            "sourceId": "missing",
+            "newName": "Harbor",
+            "newType": "location",
+            "relationType": "home",
+        },
+    )
+    assert orphan.status_code == 404
+    assert admin.get(f"/api/projects/{project_id}/entities/locations").json()["entities"] == []
+
+
+def test_failed_delete_and_restore_leave_files_where_they_were(admin, env, monkeypatch):
+    from dreamforge_api.services import metadata
+
+    project_id = create(admin)
+    ana = new_entity(admin, project_id)
+    bo = new_entity(admin, project_id, name="Bo")
+    root = folder(env, project_id)
+    admin.post(
+        f"/api/projects/{project_id}/relations",
+        json={"sourceId": ana["id"], "targetId": bo["id"], "relationType": "friend"},
+    )
+    url = f"/api/projects/{project_id}/entities/characters/{ana['id']}"
+    real = metadata.persist_project_metadata
+
+    def broken(*args):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(metadata, "persist_project_metadata", broken)
+    with pytest.raises(OSError):
+        admin.request("DELETE", url)
+    monkeypatch.setattr(metadata, "persist_project_metadata", real)
+    assert (root / "characters" / "ana.md").is_file()
+    assert len(json.loads((root / "relations.json").read_text())) == 1
+    assert admin.get(url).status_code == 200
+
+    trashed = admin.request("DELETE", url).json()
+    monkeypatch.setattr(metadata, "persist_project_metadata", broken)
+    with pytest.raises(OSError):
+        admin.post(f"/api/projects/{project_id}/trash/{trashed['id']}/restore", json={})
+    monkeypatch.setattr(metadata, "persist_project_metadata", real)
+    assert not (root / "characters" / "ana.md").exists()
+    assert json.loads((root / "relations.json").read_text()) == []
+    restored = admin.post(f"/api/projects/{project_id}/trash/{trashed['id']}/restore", json={})
+    assert restored.status_code == 200
+    assert len(json.loads((root / "relations.json").read_text())) == 1

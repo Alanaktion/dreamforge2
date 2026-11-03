@@ -253,6 +253,10 @@ def add_relation(project_id: str, body: RelationCreate, auth: CurrentAuth, db: D
         raise HTTPException(400, "Unknown relation type")
     if not target_id and body.new_type not in service.ENTITY_DIRS:
         raise HTTPException(400, "Unknown type")
+    # Before creating anything, so a bad request leaves no orphan entity behind.
+    known = {row.id for row in service.entity_index(db, project_id)}
+    if body.source_id not in known or (target_id and target_id not in known):
+        raise HTTPException(404, "Entity not found")
     if not target_id:
         target_id = service.create_entity(db, project, body.new_type, new_name)["id"]
     relation = relations.add_relation(

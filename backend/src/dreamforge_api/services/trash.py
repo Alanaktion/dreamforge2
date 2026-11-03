@@ -31,7 +31,12 @@ from .entities import (
 )
 from .members import project_path
 from .metadata import with_project_metadata
-from .relations import remove_relations_for_entity, restore_relations
+from .relations import (
+    load_relations,
+    remove_relations_for_entity,
+    restore_relations,
+    save_relations,
+)
 
 TRASH_DIR = ".trash"
 TRASH_TTL_DAYS = 30
@@ -41,10 +46,42 @@ class NotPortedError(Exception):
     pass
 
 
+class _Undo:
+    """File changes made inside a database transaction, undone if the transaction fails,
+    so the files and the rows (trash, index, bookmarks) never disagree."""
+
+    def __init__(self, base) -> None:
+        self.base = base
+        self.moves: list[tuple[Any, Any]] = []
+        self.removed_relations: list[dict[str, Any]] = []
+        self.restored_relation_ids: set[str] = set()
+
+    def move(self, source, target) -> None:
+        os.rename(source, target)
+        self.moves.append((source, target))
+
+    def run(self, db: Session, project: Project, change):
+        try:
+            return with_project_metadata(db, project, change)
+        except Exception:
+            for source, target in reversed(self.moves):
+                os.rename(target, source)
+            restore_relations(self.base, self.removed_relations)
+            if self.restored_relation_ids:
+                kept = [
+                    r
+                    for r in load_relations(self.base)
+                    if r.get("id") not in self.restored_relation_ids
+                ]
+                save_relations(self.base, kept)
+            raise
+
+
 def soft_delete_entity(
     db: Session, project: Project, entity_type: str, entity_id: str
 ) -> dict[str, Any] | None:
     base = project_path(project)
+    undo = _Undo(base)
 
     def change() -> dict[str, Any] | None:
         source = resolve_entity_path(base, entity_type, entity_id)
@@ -53,10 +90,11 @@ def soft_delete_entity(
             return None
         trash_dir = base / TRASH_DIR / ENTITY_DIRS[entity_type]
         trash_dir.mkdir(parents=True, exist_ok=True)
-        os.rename(source, trash_dir / f"{entity_id}.md")
+        undo.move(source, trash_dir / f"{entity_id}.md")
         remove_entity_from_db(db, project.id, entity_id)
 
         relations = remove_relations_for_entity(base, entity_id)
+        undo.removed_relations = relations
         bookmarks = db.exec(
             select(Bookmark).where(
                 Bookmark.entity_id == entity_id, Bookmark.project_id == project.id
@@ -101,11 +139,12 @@ def soft_delete_entity(
         }
 
     with project_lock(project.id):
-        return with_project_metadata(db, project, change)
+        return undo.run(db, project, change)
 
 
 def restore_entity(db: Session, project: Project, trash_id: str) -> bool:
     base = project_path(project)
+    undo = _Undo(base)
 
     def change() -> bool:
         item = db.exec(
@@ -124,7 +163,7 @@ def restore_entity(db: Session, project: Project, trash_id: str) -> bool:
         slug = unique_slug(base, item.entity_type, name, item.entity_id)
         target_dir = entity_dir(base, item.entity_type)
         target_dir.mkdir(parents=True, exist_ok=True)
-        os.rename(trashed, target_dir / f"{slug}.md")
+        undo.move(trashed, target_dir / f"{slug}.md")
         if md:
             sync_entity_to_db(db, project.id, item.entity_type, item.entity_id, md[0])
 
@@ -133,7 +172,10 @@ def restore_entity(db: Session, project: Project, trash_id: str) -> bool:
         except ValueError:
             stash = {}  # unreadable stash: the file is restored anyway
         if isinstance(stash, dict):
-            restore_relations(base, stash.get("relations") or [])
+            stashed = [r for r in stash.get("relations") or [] if isinstance(r, dict)]
+            existing = {r.get("id") for r in load_relations(base)}
+            restore_relations(base, stashed)
+            undo.restored_relation_ids = {r.get("id") for r in stashed} - existing
             for b in stash.get("bookmarks") or []:
                 # Skip bookmarks of accounts deleted while the entity was in the trash.
                 if db.get(Bookmark, b["id"]) is None and db.get(User, b["userId"]) is not None:
@@ -160,4 +202,4 @@ def restore_entity(db: Session, project: Project, trash_id: str) -> bool:
         return True
 
     with project_lock(project.id):
-        return with_project_metadata(db, project, change)
+        return undo.run(db, project, change)
