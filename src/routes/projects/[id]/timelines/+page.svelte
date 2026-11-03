@@ -1,6 +1,8 @@
 <script lang="ts">
   import { page } from '$app/state';
-  import { enhance } from '$app/forms';
+  import { invalidateAll } from '$app/navigation';
+  import { ApiError } from '$lib/api';
+  import * as api from '$lib/api/timeline';
   import { Plus, Clock, Trash2, Edit, X, Filter, Search, Save, Calendar } from '@lucide/svelte';
   import { cn } from '$lib/utils';
   import { Button } from '$lib/components/ui/button';
@@ -16,7 +18,7 @@
     SelectTrigger,
     SelectValue
   } from '$lib/components/ui/select';
-  import type { TimelineEvent, CalendarConfig } from '$lib/server/timelines';
+  import type { TimelineEvent, CalendarConfig, EventFields } from '$lib/api/timeline';
 
   let showCreate = $state(false);
   let showCalendarSettings = $state(false);
@@ -46,6 +48,79 @@
   let editEntityIds = $state<string[]>([]);
 
   let timelineEl = $state<HTMLDivElement | undefined>(undefined);
+  let error = $state<string | null>(null);
+  let calendarName = $state('');
+  let calendarMonths = $state('');
+
+  const projectId = $derived(page.params.id ?? '');
+  const readOnly = $derived(page.data?.role === 'commenter');
+
+  /** Runs a change and reloads the timeline. Returns whether the change went through. */
+  async function run(change: () => Promise<unknown>): Promise<boolean> {
+    let ok = false;
+    try {
+      await change();
+      error = null;
+      ok = true;
+    } catch (cause) {
+      error = cause instanceof ApiError ? cause.message : 'Could not reach the server. Try again.';
+    }
+    await invalidateAll().catch(() => {});
+    return ok;
+  }
+
+  function optionalNumber(value: string | number | null | undefined): number | null {
+    const text = value == null ? '' : String(value).trim();
+    return text === '' ? null : Number(text);
+  }
+
+  async function saveCalendar(event: SubmitEvent) {
+    event.preventDefault();
+    const months = calendarMonths
+      .split(',')
+      .map((m) => m.trim())
+      .filter(Boolean);
+    if (await run(() => api.updateCalendar(projectId, calendarName, months)))
+      showCalendarSettings = false;
+  }
+
+  async function createEvent(event: SubmitEvent) {
+    event.preventDefault();
+    const fields: EventFields = {
+      year: Number(newYear),
+      month: optionalNumber(newMonth),
+      day: optionalNumber(newDay),
+      era: newEra,
+      title: newTitle,
+      description: newDescription,
+      significance: newSignificance,
+      entityIds: newEntityIds
+    };
+    if (await run(() => api.createEvent(projectId, fields))) {
+      showCreate = false;
+      resetCreateForm();
+    }
+  }
+
+  async function saveEvent(event: SubmitEvent, eventId: string) {
+    event.preventDefault();
+    const changes: EventFields = {
+      year: Number(editYear),
+      month: optionalNumber(editMonth),
+      day: optionalNumber(editDay),
+      era: editEra,
+      title: editTitle,
+      description: editDescription,
+      significance: editSignificance,
+      entityIds: editEntityIds
+    };
+    if (await run(() => api.updateEvent(projectId, eventId, changes))) closeEdit();
+  }
+
+  async function removeEvent(eventId: string) {
+    if (!confirm('Delete this event?')) return;
+    if (await run(() => api.deleteEvent(projectId, eventId))) closeEdit();
+  }
 
   const timeline = $derived(
     page.data?.timeline as { calendar: CalendarConfig; events: TimelineEvent[] } | undefined
@@ -215,16 +290,29 @@
       <p class="text-sm text-muted-foreground">{page.data?.projectName || 'Project'}</p>
     </div>
     <div class="flex flex-wrap gap-2">
-      <Button variant="outline" onclick={() => (showCalendarSettings = !showCalendarSettings)}>
-        <Calendar class="h-4 w-4" />
-        Calendar
-      </Button>
-      <Button onclick={() => (showCreate = !showCreate)}>
-        <Plus class="h-4 w-4" />
-        Add Event
-      </Button>
+      {#if !readOnly}
+        <Button
+          variant="outline"
+          onclick={() => {
+            calendarName = calendar.name;
+            calendarMonths = calendar.months.join(', ');
+            showCalendarSettings = !showCalendarSettings;
+          }}
+        >
+          <Calendar class="h-4 w-4" />
+          Calendar
+        </Button>
+        <Button onclick={() => (showCreate = !showCreate)}>
+          <Plus class="h-4 w-4" />
+          Add Event
+        </Button>
+      {/if}
     </div>
   </div>
+
+  {#if error}
+    <p class="mb-4 text-sm text-destructive" role="alert">{error}</p>
+  {/if}
 
   {#if showCalendarSettings}
     <div class="mb-6 rounded-lg border border-border bg-card p-4">
@@ -239,23 +327,17 @@
           <X class="h-4 w-4" />
         </Button>
       </div>
-      <form method="POST" action="?/updateCalendar" use:enhance class="space-y-3">
+      <form onsubmit={saveCalendar} class="space-y-3">
         <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div class="space-y-1">
             <Label for="calendarName" class="text-xs text-muted-foreground">Calendar Name</Label>
-            <Input id="calendarName" name="calendarName" type="text" value={calendar.name} />
+            <Input id="calendarName" type="text" bind:value={calendarName} />
           </div>
           <div class="space-y-1">
             <Label for="months" class="text-xs text-muted-foreground"
               >Month Names (comma-separated)</Label
             >
-            <Input
-              id="months"
-              name="months"
-              type="text"
-              value={calendar.months.join(', ')}
-              class="font-mono"
-            />
+            <Input id="months" type="text" bind:value={calendarMonths} class="font-mono" />
           </div>
         </div>
         <Button type="submit">
@@ -269,20 +351,7 @@
   {#if showCreate}
     <div class="mb-6 rounded-lg border border-border bg-card p-4">
       <h2 class="mb-4 text-sm font-semibold">Add Event</h2>
-      <form
-        method="POST"
-        action="?/createEvent"
-        use:enhance={() => {
-          return async ({ result, update }) => {
-            if (result.type === 'success') {
-              showCreate = false;
-              resetCreateForm();
-              await update();
-            }
-          };
-        }}
-        class="space-y-3"
-      >
+      <form onsubmit={createEvent} class="space-y-3">
         <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <div class="space-y-1">
             <Label for="new-year" class="text-xs text-muted-foreground">Year</Label>
@@ -301,7 +370,6 @@
                 {/each}
               </SelectContent>
             </Select>
-            <input type="hidden" name="month" value={newMonth} />
           </div>
           <div class="space-y-1">
             <Label for="new-day" class="text-xs text-muted-foreground">Day</Label>
@@ -345,7 +413,6 @@
                 <SelectItem value="trivial">Trivial</SelectItem>
               </SelectContent>
             </Select>
-            <input type="hidden" name="significance" value={newSignificance} />
           </div>
           <div class="space-y-1">
             <Label for="new-entities" class="text-xs text-muted-foreground">Linked Entities</Label>
@@ -378,7 +445,6 @@
                 {/each}
               </div>
             {/if}
-            <input type="hidden" name="entityIds" value={JSON.stringify(newEntityIds)} />
           </div>
         </div>
         <div class="flex gap-2">
@@ -572,20 +638,7 @@
       {#each filteredEvents as event}
         <div class="rounded-lg border border-border bg-card px-4 py-3">
           {#if editingEventId === event.id}
-            <form
-              method="POST"
-              action="?/updateEvent"
-              use:enhance={() => {
-                return async ({ result, update }) => {
-                  if (result.type === 'success') {
-                    closeEdit();
-                    await update({ reset: false });
-                  }
-                };
-              }}
-              class="space-y-3"
-            >
-              <input type="hidden" name="eventId" value={event.id} />
+            <form onsubmit={(e) => saveEvent(e, event.id)} class="space-y-3">
               <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
                 <div class="space-y-1">
                   <Label for="edit-year" class="text-xs text-muted-foreground">Year</Label>
@@ -604,7 +657,6 @@
                       {/each}
                     </SelectContent>
                   </Select>
-                  <input type="hidden" name="month" value={editMonth} />
                 </div>
                 <div class="space-y-1">
                   <Label for="edit-day" class="text-xs text-muted-foreground">Day</Label>
@@ -647,7 +699,6 @@
                       <SelectItem value="trivial">Trivial</SelectItem>
                     </SelectContent>
                   </Select>
-                  <input type="hidden" name="significance" value={editSignificance} />
                 </div>
                 <div class="space-y-1">
                   <Label for="edit-entities" class="text-xs text-muted-foreground"
@@ -684,7 +735,6 @@
                       {/each}
                     </div>
                   {/if}
-                  <input type="hidden" name="entityIds" value={JSON.stringify(editEntityIds)} />
                 </div>
               </div>
               <div class="flex gap-2">
@@ -694,8 +744,8 @@
                 </Button>
                 <Button type="button" variant="outline" onclick={closeEdit}>Cancel</Button>
                 <Button
-                  type="submit"
-                  formaction="?/deleteEvent"
+                  type="button"
+                  onclick={() => removeEvent(event.id)}
                   variant="destructive"
                   class="ml-auto"
                 >
@@ -712,12 +762,16 @@
                     class="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
                     style="background-color: {significanceColor(event.significance)}"
                   ></span>
-                  <button
-                    class="truncate text-left font-medium hover:underline"
-                    onclick={() => openEdit(event)}
-                  >
-                    {event.title}
-                  </button>
+                  {#if readOnly}
+                    <span class="truncate font-medium">{event.title}</span>
+                  {:else}
+                    <button
+                      class="truncate text-left font-medium hover:underline"
+                      onclick={() => openEdit(event)}
+                    >
+                      {event.title}
+                    </button>
+                  {/if}
                   <span
                     class={cn(
                       'shrink-0 rounded px-1.5 py-0.5 text-xs font-medium',
@@ -749,20 +803,24 @@
                 {/if}
               </div>
               <div class="flex shrink-0 items-center gap-1 ml-3">
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  onclick={() => openEdit(event)}
-                  aria-label="Edit event"
-                >
-                  <Edit class="h-4 w-4" />
-                </Button>
-                <form method="POST" action="?/deleteEvent" use:enhance>
-                  <input type="hidden" name="eventId" value={event.id} />
-                  <Button type="submit" variant="ghost" size="icon-sm" aria-label="Delete event">
+                {#if !readOnly}
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    onclick={() => openEdit(event)}
+                    aria-label="Edit event {event.title}"
+                  >
+                    <Edit class="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    onclick={() => removeEvent(event.id)}
+                    aria-label="Delete event {event.title}"
+                  >
                     <Trash2 class="h-4 w-4 text-destructive" />
                   </Button>
-                </form>
+                {/if}
               </div>
             </div>
           {/if}

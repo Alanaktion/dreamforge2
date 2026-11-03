@@ -11,7 +11,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from ..storage import project_lock, read_json, write_json
+from ..storage import StorageError, project_lock, read_json, write_json
 
 LOG_FILE = "writing-log.json"
 KEEP_DAYS = 400
@@ -103,3 +103,42 @@ def set_story_target(base: Path, project_id: str, story_id: str, target: float) 
         else:
             log["storyTargets"].pop(story_id, None)
         write_json(_path(base), log)
+
+
+def set_daily_goal(base: Path, project_id: str, goal: float) -> None:
+    with project_lock(project_id):
+        log = read_log(base)
+        log["dailyGoal"] = max(0, round(goal))
+        write_json(_path(base), log)
+
+
+def get_progress(base: Path, today: date | None = None, *, lenient: bool = False) -> dict[str, Any]:
+    """``lenient`` shows an unreadable log as empty instead of failing the page."""
+    try:
+        log = read_log(base)
+    except StorageError:
+        if not lenient:
+            raise
+        log = {"dailyGoal": DEFAULT_DAILY_GOAL, "storyTargets": {}, "days": {}}
+    days: dict[str, float] = log["days"]
+    key = day_key(today)
+    recent = [
+        {"date": d, "words": days.get(d, 0)}
+        for d in (_shift(key, -i) for i in range(RECENT_DAYS - 1, -1, -1))
+    ]
+    total30 = sum(days.get(_shift(key, -i), 0) for i in range(30))
+    # A streak survives an unwritten today (the day isn't over), but not an unwritten yesterday.
+    streak = 0
+    cursor = key if days.get(key, 0) > 0 else _shift(key, -1)
+    while days.get(cursor, 0) > 0:
+        streak += 1
+        cursor = _shift(cursor, -1)
+    return {
+        "daily_goal": log["dailyGoal"],
+        "story_targets": log["storyTargets"],
+        "today_words": days.get(key, 0),
+        "streak": streak,
+        "best": max(days.values(), default=0),
+        "total30": total30,
+        "recent": recent,
+    }
