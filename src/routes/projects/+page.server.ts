@@ -10,7 +10,7 @@ import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { getMemberProjects, getProjectAccess } from '$lib/server/members';
 import { pinnedProjectIds, togglePin } from '$lib/server/pins';
 import { resolveProjectPath } from '$lib/server/paths';
-import { createProject } from '$lib/server/projects';
+import { createProject, deleteProject } from '$lib/server/projects';
 import {
   applyPreset,
   createSampleWorld,
@@ -24,6 +24,15 @@ import path from 'node:path';
 import type { PageServerLoad } from './$types';
 
 const drizzleDb = drizzle(db);
+
+function seedOrDiscard(project: { id: string; dataPath: string }, seed: () => void): void {
+  try {
+    seed();
+  } catch (cause) {
+    deleteProject(project.id, project.dataPath);
+    throw cause;
+  }
+}
 
 export const load: PageServerLoad = async ({ locals }) => {
   if (!locals.user) {
@@ -94,7 +103,7 @@ export const actions = {
     if (!isPreset(preset)) return fail(400, { error: 'Unknown starter' });
 
     const project = createProject(locals.user.id, { name, description });
-    applyPreset(project.id, project.dataPath, preset);
+    seedOrDiscard(project, () => applyPreset(project.id, project.dataPath, preset));
 
     redirect(303, `/projects/${project.id}`);
   },
@@ -105,7 +114,7 @@ export const actions = {
       name: SAMPLE_WORLD_NAME,
       description: 'A small example world to explore. Delete it from Settings when you are done.'
     });
-    createSampleWorld(project.id, project.dataPath);
+    seedOrDiscard(project, () => createSampleWorld(project.id, project.dataPath));
     redirect(303, `/projects/${project.id}`);
   },
 

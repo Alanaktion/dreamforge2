@@ -54,6 +54,7 @@ export const SlashCommands = Extension.create<SlashOptions>({
                   `<button type="button" role="option" aria-selected="${i === selected}" class="${i === selected ? 'bg-accent ' : ''}flex w-full flex-col items-start px-3 py-1.5 text-left text-sm hover:bg-accent" data-index="${i}"><span>${escapeHtml(item.label)}</span><span class="text-xs text-muted-foreground">${escapeHtml(item.hint)}</span></button>`
               )
               .join('');
+            dom.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest' });
             dom.querySelectorAll('button').forEach((btn) => {
               btn.addEventListener('mousedown', (e) => {
                 e.preventDefault();

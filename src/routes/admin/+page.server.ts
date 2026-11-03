@@ -60,8 +60,10 @@ export const actions: Actions = {
     return run(() => setAdmin(admin.id, String(form.get('userId')), form.get('admin') === 'true'));
   },
   resetPassword: async ({ locals, request }) => {
-    requireAdmin(locals);
+    const admin = requireAdmin(locals);
     const userId = String((await request.formData()).get('userId'));
+    if (userId === admin.id)
+      return fail(400, { error: 'Change your own password on the Account page' });
     return run(async () => ({
       success: true,
       reset: { userId, password: await resetPassword(userId) }

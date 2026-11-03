@@ -42,7 +42,7 @@ export function watchProject(projectId: string, projectPath: string): void {
     ignored: /(^|[/\\])\../,
     persistent: true,
     ignoreInitial: false,
-    depth: 4
+    depth: 5
   });
   let ready = false;
   watcher.on('ready', () => (ready = true));
@@ -55,21 +55,24 @@ export function watchProject(projectId: string, projectPath: string): void {
     }
   };
 
+  const isProjectFile = (filePath: string) =>
+    filePath.endsWith('.md') || filePath.endsWith('.json');
+
   watcher.on('add', (filePath) => {
+    if (isProjectFile(filePath)) touch();
     if (!filePath.endsWith('.md')) return;
-    touch();
     safelySync(projectId, projectPath, filePath);
   });
 
   watcher.on('change', (filePath) => {
+    if (isProjectFile(filePath)) touch();
     if (!filePath.endsWith('.md')) return;
-    touch();
     safelySync(projectId, projectPath, filePath);
   });
 
   watcher.on('unlink', (filePath) => {
+    if (isProjectFile(filePath)) touch();
     if (!filePath.endsWith('.md')) return;
-    touch();
     const relPath = path.relative(projectPath, filePath);
     const dirName = path.basename(path.dirname(relPath));
 

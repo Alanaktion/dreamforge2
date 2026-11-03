@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { afterNavigate } from '$app/navigation';
   import { page } from '$app/state';
   import { entityTypeToRoute } from '$lib/utils/entityTypes';
   import { ENTITY_PLURAL, ENTITY_LABELS } from '$lib/entityFields';
@@ -75,8 +76,7 @@
     return page.url.pathname === path || page.url.pathname.startsWith(`${path}/`);
   }
 
-  $effect(() => {
-    void page.url.pathname;
+  afterNavigate(() => {
     if (sidebar?.isMobile) sidebar.setOpenMobile(false);
   });
 </script>
@@ -108,7 +108,10 @@
         <Sidebar.Menu>
           <Sidebar.MenuItem>
             <Sidebar.MenuButton
-              onclick={() => overlays.palette.toggle()}
+              onclick={() => {
+                if (sidebar?.isMobile) sidebar.setOpenMobile(false);
+                overlays.palette.toggle();
+              }}
               tooltipContent="Quick Open"
             >
               <Command class="h-4 w-4" />

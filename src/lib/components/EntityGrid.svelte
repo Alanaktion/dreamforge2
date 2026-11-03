@@ -392,7 +392,7 @@
               {@const spillCount = hasEditor ? 0 : cells[col].spill}
               <td
                 role="gridcell"
-                tabindex={-1}
+                tabindex={isActive || (!activeCell && row === 0 && col === 1) ? 0 : -1}
                 data-cell="{row}-{col}"
                 class={cn(
                   'group/cell h-9 border-b border-border p-0 align-middle focus:outline-none',
@@ -410,6 +410,9 @@
                     ? 'left: var(--grid-col0, 4rem)'
                     : undefined}
                 onclick={() => (activeCell = { row, col })}
+                onfocus={() => {
+                  if (!isActive) activeCell = { row, col };
+                }}
                 ondblclick={() => beginEdit(toEditString(getCellValue(entity, column.key)))}
               >
                 <div

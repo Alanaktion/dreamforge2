@@ -56,6 +56,7 @@ export function moveItem<T>(items: T[], item: T, delta: number): T[] | null {
 export function safeNext(value: unknown, fallback = '/projects'): string {
   if (typeof value !== 'string' || !value.startsWith('/') || value.startsWith('//'))
     return fallback;
-  if (value.includes('\\')) return fallback;
+  const unsafe = (c: string) => c === '\\' || c.charCodeAt(0) <= 0x1f || c.charCodeAt(0) === 0x7f;
+  if ([...value].some(unsafe)) return fallback;
   return value;
 }

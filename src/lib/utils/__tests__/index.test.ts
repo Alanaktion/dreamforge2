@@ -125,6 +125,9 @@ describe('safeNext', () => {
   it('allows same-site paths only', () => {
     expect(safeNext('/invite/abc')).toBe('/invite/abc');
     expect(safeNext('//evil.example')).toBe('/projects');
+    expect(safeNext('/\t/evil.example')).toBe('/projects');
+    expect(safeNext('/\n/evil.example')).toBe('/projects');
+    expect(safeNext('/x\u007f')).toBe('/projects');
     expect(safeNext('https://evil.example')).toBe('/projects');
     expect(safeNext('/\\evil.example')).toBe('/projects');
     expect(safeNext(null)).toBe('/projects');

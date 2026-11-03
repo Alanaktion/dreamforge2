@@ -1179,6 +1179,7 @@
               id="scene-background"
               class="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm"
               bind:value={sceneBackgroundImage}
+              onchange={() => (zen.backgroundImage = sceneBackgroundImage || null)}
             >
               <option value="">None</option>
               {#each backgroundImages as image (image.id)}

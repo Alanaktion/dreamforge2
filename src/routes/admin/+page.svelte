@@ -101,11 +101,11 @@
               </td>
               <td class="py-2">
                 <div class="flex flex-wrap justify-end gap-1">
-                  <form method="POST" action="?/resetPassword" use:enhance>
-                    <input type="hidden" name="userId" value={user.id} />
-                    <Button type="submit" size="xs" variant="outline">Reset password</Button>
-                  </form>
                   {#if !self}
+                    <form method="POST" action="?/resetPassword" use:enhance>
+                      <input type="hidden" name="userId" value={user.id} />
+                      <Button type="submit" size="xs" variant="outline">Reset password</Button>
+                    </form>
                     <form method="POST" action="?/admin" use:enhance>
                       <input type="hidden" name="userId" value={user.id} />
                       <input type="hidden" name="admin" value={String(!user.isAdmin)} />
