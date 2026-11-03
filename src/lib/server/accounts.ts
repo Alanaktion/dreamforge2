@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { and, count, eq, ne } from 'drizzle-orm';
+import { and, count, eq, ne, or, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
 import db from './db';
 import {
@@ -13,6 +13,7 @@ import {
   users
 } from './schema';
 import { hash } from './password';
+import { generateId } from '$lib/utils';
 
 const index = drizzle(db);
 
@@ -92,9 +93,79 @@ export function setDisabled(actorId: string, userId: string, disabled: boolean):
   });
 }
 
+export const MIN_PASSWORD_LENGTH = 8;
+
+/** Finds a user by email (case-insensitive) or exact username. */
+export function findUser(identifier: string) {
+  const email = identifier.trim().toLowerCase();
+  return index
+    .select()
+    .from(users)
+    .where(or(sql`lower(${users.email}) = ${email}`, eq(users.username, identifier.trim())))
+    .get();
+}
+
+export interface NewUser {
+  email: string;
+  username: string;
+  password: string;
+  isAdmin?: boolean;
+  mustChangePassword?: boolean;
+}
+
+/** Creates an account with the same rules as the registration form. Returns the new user's ID. */
+export async function createUser(input: NewUser): Promise<string> {
+  const email = input.email.trim().toLowerCase();
+  const username = input.username.trim();
+  if (!email || !username || !input.password)
+    throw new AccountError('Email, username and password are required');
+  if (input.password.length < MIN_PASSWORD_LENGTH)
+    throw new AccountError(`Password must be at least ${MIN_PASSWORD_LENGTH} characters`);
+  const taken = index
+    .select({ id: users.id })
+    .from(users)
+    .where(or(sql`lower(${users.email}) = ${email}`, eq(users.username, username)))
+    .get();
+  if (taken) throw new AccountError('Email or username already taken');
+  const id = generateId();
+  index
+    .insert(users)
+    .values({
+      id,
+      email,
+      username,
+      passwordHash: await hash(input.password),
+      isAdmin: input.isAdmin ?? false,
+      mustChangePassword: input.mustChangePassword ?? false,
+      createdAt: new Date().toISOString()
+    })
+    .run();
+  return id;
+}
+
+/** Sets a chosen password and signs the user out everywhere. */
+export async function setPassword(
+  userId: string,
+  password: string,
+  mustChangePassword = false
+): Promise<void> {
+  requireUser(userId);
+  if (password.length < MIN_PASSWORD_LENGTH)
+    throw new AccountError(`Password must be at least ${MIN_PASSWORD_LENGTH} characters`);
+  const passwordHash = await hash(password);
+  index.transaction((tx) => {
+    tx.update(users).set({ passwordHash, mustChangePassword }).where(eq(users.id, userId)).run();
+    tx.delete(sessions).where(eq(sessions.userId, userId)).run();
+  });
+}
+
+export function generateTemporaryPassword(): string {
+  return randomBytes(12).toString('base64url');
+}
+
 export async function resetPassword(userId: string): Promise<string> {
   requireUser(userId);
-  const temporary = randomBytes(12).toString('base64url');
+  const temporary = generateTemporaryPassword();
   const passwordHash = await hash(temporary);
   index.transaction((tx) => {
     tx.update(users)

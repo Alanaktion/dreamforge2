@@ -10,7 +10,10 @@ vi.mock('../db', () => ({ default: testDb }));
 import { migrate } from '../migrate';
 import {
   AccountError,
+  createUser,
   deleteAccount,
+  findUser,
+  setPassword,
   listUsers,
   resetPassword,
   setAdmin,
@@ -155,5 +158,46 @@ describe('registration mode', () => {
     expect(registrationMode()).toBe('closed');
     setRegistrationMode('default');
     expect(registrationMode()).toBe('default');
+  });
+});
+
+describe('command-line account management', () => {
+  it('creates an administrator with a normalised email and a working password', async () => {
+    const id = await createUser({
+      email: ' Carol@Test.com ',
+      username: 'carol',
+      password: 'longenough',
+      isAdmin: true,
+      mustChangePassword: true
+    });
+    const carol = findUser('CAROL@test.com');
+    expect(carol?.id).toBe(id);
+    expect(carol?.email).toBe('carol@test.com');
+    expect(carol?.isAdmin).toBe(true);
+    expect(carol?.mustChangePassword).toBe(true);
+    expect(await verify('longenough', carol!.passwordHash)).toBe(true);
+    expect(findUser('carol')?.id).toBe(id);
+  });
+
+  it('rejects duplicate emails or usernames and short passwords', async () => {
+    await expect(
+      createUser({ email: 'ALICE@test.com', username: 'new', password: 'longenough' })
+    ).rejects.toThrow(AccountError);
+    await expect(
+      createUser({ email: 'new@test.com', username: 'bob', password: 'longenough' })
+    ).rejects.toThrow(AccountError);
+    await expect(
+      createUser({ email: 'new@test.com', username: 'new', password: 'short' })
+    ).rejects.toThrow(/at least 8/);
+  });
+
+  it('sets a chosen password and signs the user out', async () => {
+    testDb
+      .prepare(`INSERT INTO sessions (id, user_id, expires_at) VALUES ('s1', 'bob', 9e9)`)
+      .run();
+    await setPassword('bob', 'brandnewpass');
+    expect(await verify('brandnewpass', findUser('bob')!.passwordHash)).toBe(true);
+    expect(testDb.prepare(`SELECT count(*) n FROM sessions`).get().n).toBe(0);
+    await expect(setPassword('nobody', 'brandnewpass')).rejects.toThrow(AccountError);
   });
 });

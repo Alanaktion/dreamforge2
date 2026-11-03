@@ -14,7 +14,9 @@
     "test:watch": "vitest",
     "format": "prettier --write .",
     "test:e2e": "playwright test",
-    "db:migrate": "node scripts/migrate.js"
+    "db:migrate": "node scripts/migrate.js",
+    "user:add": "node scripts/users.js add",
+    "user:reset-password": "node scripts/users.js reset-password"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

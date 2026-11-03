@@ -58,16 +58,34 @@ docker compose -f docker-compose.dev.yml up
 
 ## Scripts
 
-| Command              | Description                                     |
-| -------------------- | ----------------------------------------------- |
-| `npm run dev`        | Start dev server with hot-reload                |
-| `npm run build`      | Production build                                |
-| `npm run preview`    | Preview production build                        |
-| `npm test`           | Run tests                                       |
-| `npm run check`      | Type-check                                      |
-| `npm run lint`       | Lint                                            |
-| `npm run format`     | Format code                                     |
-| `npm run db:migrate` | Apply database migrations (also run on startup) |
+| Command                       | Description                                     |
+| ----------------------------- | ----------------------------------------------- |
+| `npm run dev`                 | Start dev server with hot-reload                |
+| `npm run build`               | Production build                                |
+| `npm run preview`             | Preview production build                        |
+| `npm test`                    | Run tests                                       |
+| `npm run check`               | Type-check                                      |
+| `npm run lint`                | Lint                                            |
+| `npm run format`              | Format code                                     |
+| `npm run db:migrate`          | Apply database migrations (also run on startup) |
+| `npm run user:add`            | Create an account (see below)                   |
+| `npm run user:reset-password` | Reset an account's password (see below)         |
+
+### Managing accounts from the command line
+
+These work without starting the server and honour `DATABASE_PATH`, like the app.
+
+```bash
+# Create a user. Add --admin for an instance administrator.
+npm run user:add -- --email ada@example.com --username ada --admin
+
+# Reset a password, by email or username. Signs the user out everywhere.
+npm run user:reset-password -- ada@example.com
+```
+
+Without `--password`, both commands print a temporary password that must be changed at the next
+sign-in. Pass `--password <password>` (at least 8 characters) to set one directly; note that it
+will end up in your shell history.
 
 ## Features
 
