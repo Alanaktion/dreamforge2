@@ -1,6 +1,5 @@
 <script lang="ts">
   import { page } from '$app/state';
-  import { invalidateAll } from '$app/navigation';
   import {
     BookOpen,
     Users,
@@ -10,19 +9,13 @@
     Bug,
     Package,
     FileText,
-    Share2,
-    Settings,
-    Trash2,
-    Image as ImageIcon,
-    RefreshCw,
-    Sparkles,
     Clock,
     PenLine,
-    Search,
-    Download,
-    ArrowRight,
     Target,
-    Flame
+    Flame,
+    CircleCheck,
+    Circle,
+    X
   } from '@lucide/svelte';
   import Button from '$lib/components/ui/button/button.svelte';
   import { formatWordCount, readingMinutes } from '$lib/utils/wordCount';
@@ -30,8 +23,6 @@
   import { ENTITY_PLURAL } from '$lib/entityFields';
   import { entityTypeToRoute } from '$lib/utils/entityTypes';
   import type { EntityType, ProjectStats, WritingProgress } from '$lib/types';
-
-  let syncing = $state(false);
 
   let stats = $derived((page.data?.stats || null) as ProjectStats | null);
   let progress = $derived((page.data?.progress || null) as WritingProgress | null);
@@ -42,22 +33,64 @@
       ? Math.min(100, Math.round((progress.todayWords / progress.dailyGoal) * 100))
       : 0
   );
-  let peakDay = $derived(progress ? Math.max(1, ...progress.recent.map((d) => d.words)) : 1);
+  let steps = $derived(
+    page.data?.gettingStarted as
+      { character: boolean; scene: boolean; relation: boolean; mention: boolean } | undefined
+  );
+  let checklist = $derived(
+    steps
+      ? [
+          {
+            done: steps.character,
+            label: 'Create a character',
+            hint: 'Give them a want and a secret.',
+            href: `/projects/${projectId}/characters?new=1`
+          },
+          {
+            done: steps.scene,
+            label: 'Write a scene',
+            hint: 'Even a paragraph counts.',
+            href: `/projects/${projectId}/stories${stats?.storyCount ? '' : '?new=1'}`
+          },
+          {
+            done: steps.relation,
+            label: 'Add a relation',
+            hint: 'Connect two entries to start the relation graph.',
+            href: `/projects/${projectId}/relations`
+          },
+          {
+            done: steps.mention,
+            label: 'Mention someone with @',
+            hint: 'Type @ in a scene to link a character, place, or anything else.',
+            href: stats?.lastScene
+              ? `/projects/${projectId}/stories/${stats.lastScene.storyId}?scene=${stats.lastScene.sceneId}`
+              : `/projects/${projectId}/stories`
+          }
+        ]
+      : []
+  );
+  let stepsDone = $derived(checklist.filter((s) => s.done).length);
+  let dismissed = $state(true);
+  let dismissKey = $derived(`dreamforge:getting-started:${projectId}`);
 
-  async function syncProject() {
-    syncing = true;
+  $effect(() => {
     try {
-      const res = await fetch(`/api/projects/${projectId}/sync`, { method: 'POST' });
-      if (!res.ok) {
-        console.error('Sync failed', await res.text());
-      }
-      await invalidateAll();
-    } catch (e) {
-      console.error('Sync error', e);
-    } finally {
-      syncing = false;
+      dismissed = localStorage.getItem(dismissKey) === 'dismissed';
+    } catch {
+      dismissed = false;
+    }
+  });
+
+  function dismissChecklist() {
+    dismissed = true;
+    try {
+      localStorage.setItem(dismissKey, 'dismissed');
+    } catch {
+      // Preference only.
     }
   }
+
+  let peakDay = $derived(progress ? Math.max(1, ...progress.recent.map((d) => d.words)) : 1);
 
   const ENTITY_ICONS: Record<EntityType, typeof Users> = {
     character: Users,
@@ -68,17 +101,6 @@
     item: Package,
     note: FileText
   };
-
-  const TOOLS = [
-    { label: 'Stories', icon: BookOpen, href: 'stories' },
-    { label: 'Plots', icon: Sparkles, href: 'plots' },
-    { label: 'Timelines', icon: Clock, href: 'timelines' },
-    { label: 'Relations', icon: Share2, href: 'relations' },
-    { label: 'Search', icon: Search, href: 'search' },
-    { label: 'Images', icon: ImageIcon, href: 'images' },
-    { label: 'Settings', icon: Settings, href: 'settings' },
-    { label: 'Trash', icon: Trash2, href: 'trash' }
-  ];
 
   let entityTypes = $derived(Object.keys(ENTITY_PLURAL) as EntityType[]);
 </script>
@@ -95,17 +117,50 @@
         <p class="mt-1 text-muted-foreground">{page.data.project.description}</p>
       {/if}
     </div>
-    <div class="flex items-center gap-2">
-      <Button href="/projects/{projectId}/export" target="_blank" variant="outline">
-        <Download class="h-4 w-4" />
-        Export
-      </Button>
-      <Button onclick={syncProject} disabled={syncing} variant="outline">
-        <RefreshCw class="h-4 w-4 {syncing ? 'animate-spin' : ''}" />
-        {syncing ? 'Syncing…' : 'Sync Now'}
-      </Button>
-    </div>
   </div>
+
+  {#if checklist.length > 0 && stepsDone < checklist.length && !dismissed}
+    <section
+      aria-labelledby="getting-started"
+      class="mb-6 rounded-lg border border-primary/30 bg-card p-4"
+    >
+      <div class="mb-3 flex items-start justify-between gap-2">
+        <div>
+          <h2 id="getting-started" class="text-sm font-semibold">Getting started</h2>
+          <p class="text-xs text-muted-foreground">{stepsDone} of {checklist.length} done</p>
+        </div>
+        <button
+          type="button"
+          class="rounded p-1 text-muted-foreground hover:bg-secondary hover:text-foreground"
+          aria-label="Dismiss getting started"
+          onclick={dismissChecklist}
+        >
+          <X class="h-4 w-4" />
+        </button>
+      </div>
+      <ol class="grid gap-2 sm:grid-cols-2">
+        {#each checklist as step (step.label)}
+          <li>
+            <a
+              href={step.href}
+              class="flex items-start gap-2 rounded-md border border-border p-3 text-sm hover:bg-secondary"
+            >
+              {#if step.done}
+                <CircleCheck class="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />
+                <span class="sr-only">Done:</span>
+              {:else}
+                <Circle class="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+              {/if}
+              <span>
+                <span class="block font-medium" class:line-through={step.done}>{step.label}</span>
+                <span class="block text-xs text-muted-foreground">{step.hint}</span>
+              </span>
+            </a>
+          </li>
+        {/each}
+      </ol>
+    </section>
+  {/if}
 
   {#if stats}
     <div class="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -296,20 +351,4 @@
       {/each}
     </div>
   {/if}
-
-  <h2 class="mb-3 text-sm font-semibold text-muted-foreground">Tools</h2>
-  <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
-    {#each TOOLS as tool (tool.href)}
-      <a
-        href="/projects/{projectId}/{tool.href}"
-        class="group flex items-center gap-3 rounded-lg border border-border bg-card p-4 hover:bg-secondary"
-      >
-        <tool.icon class="h-5 w-5 text-primary" />
-        <span class="text-sm font-medium">{tool.label}</span>
-        <ArrowRight
-          class="ml-auto h-4 w-4 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
-        />
-      </a>
-    {/each}
-  </div>
 </div>

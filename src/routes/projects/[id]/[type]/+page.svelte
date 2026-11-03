@@ -238,8 +238,17 @@
 
   let entityType = $derived((page.data?.entityType || 'character') as EntityType);
   let route = $derived(entityTypeToRoute(entityType));
+  const EMPTY_TIPS: Record<EntityType, string> = {
+    character: 'Characters hold who your people are, what they want, and what they hide.',
+    organization: 'Organizations track the guilds, families, and factions that shape your world.',
+    location: 'Locations keep places consistent, from whole continents to a single room.',
+    culture: 'Cultures capture languages, rituals, and values shared by a people.',
+    species: 'Species describe the creatures and peoples who live in your world.',
+    item: 'Items track artifacts, weapons, and heirlooms that matter to the plot.',
+    note: 'Notes are for everything else: research, ideas, and rules of your world.'
+  };
   let emptyMessage = $derived(
-    `No ${ENTITY_PLURAL[entityType].toLowerCase()} yet. Create one to get started.`
+    `No ${ENTITY_PLURAL[entityType].toLowerCase()} yet. ${EMPTY_TIPS[entityType]} Add one above, and mention it in a scene with @.`
   );
 
   function entityHref(entity: Record<string, any>) {

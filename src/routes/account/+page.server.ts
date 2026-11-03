@@ -5,11 +5,15 @@ import db from '$lib/server/db';
 import { users, sessions } from '$lib/server/schema';
 import { hash, verify } from '$lib/server/password';
 import { allowLogin } from '$lib/server/loginThrottle';
+import { AccountError, deleteAccount, ownedProjectNames } from '$lib/server/accounts';
 
 const index = drizzle(db);
 export function load({ locals }) {
   if (!locals.user) redirect(303, '/login');
-  return { mustChangePassword: !!locals.user.mustChangePassword };
+  return {
+    mustChangePassword: !!locals.user.mustChangePassword,
+    ownedProjects: ownedProjectNames(locals.user.id)
+  };
 }
 
 export const actions = {
@@ -52,5 +56,23 @@ export const actions = {
           .run();
     });
     return { success: true };
+  },
+  delete: async ({ locals, request, cookies }) => {
+    if (!locals.user) return fail(401, { error: 'Unauthorized' });
+    if (!allowLogin(`account:${locals.user.id}`))
+      return fail(429, { deleteError: 'Too many attempts. Try again in 15 minutes.' });
+    const form = await request.formData();
+    if (!(await verify(String(form.get('password') || ''), locals.user.passwordHash)))
+      return fail(400, { deleteError: 'Password is incorrect' });
+    if (form.get('confirm') !== 'DELETE')
+      return fail(400, { deleteError: 'Type DELETE to confirm' });
+    try {
+      deleteAccount(locals.user.id);
+    } catch (cause) {
+      if (cause instanceof AccountError) return fail(400, { deleteError: cause.message });
+      throw cause;
+    }
+    cookies.delete('dreamforge-session', { path: '/' });
+    redirect(303, '/login');
   }
 };

@@ -12,15 +12,20 @@
     ChevronRight,
     BookOpen,
     Save,
-    Image,
     LayoutList,
     SwitchCamera,
     Download,
     Check,
     CloudOff,
     Loader2,
-    Scan
+    Scan,
+    Pencil,
+    ArrowUp,
+    ArrowDown,
+    PanelRight,
+    X
   } from '@lucide/svelte';
+  import { moveItem } from '$lib/utils';
   import { getZenMode } from '$lib/stores/zenMode.svelte';
   import Editor from '$lib/components/Editor.svelte';
   import EntityPicker from '$lib/components/EntityPicker.svelte';
@@ -42,7 +47,7 @@
     final: 'Final'
   };
   const STATUS_DOTS: Record<SceneStatus, string> = {
-    draft: 'bg-muted-foreground/40',
+    draft: 'bg-muted-foreground',
     revised: 'bg-amber-500',
     final: 'bg-emerald-500'
   };
@@ -441,6 +446,53 @@
     if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
   }
 
+  function moveChapter(id: string, delta: number) {
+    const ids = moveItem(
+      chapters.map((c) => c.id),
+      id,
+      delta
+    );
+    if (ids) void submitChapterReorder(ids);
+  }
+
+  function moveScene(chapter: ChapterRow, sceneId: string, delta: number) {
+    const ids = moveItem(
+      chapter.scenes.map((s) => s.id),
+      sceneId,
+      delta
+    );
+    if (ids) void submitSceneReorder(chapter.id, ids);
+  }
+
+  const DETAILS_KEY = 'story:showDetails';
+  let showDetails = $state(false);
+
+  $effect(() => {
+    try {
+      showDetails = localStorage.getItem(DETAILS_KEY) === 'true';
+    } catch {
+      showDetails = false;
+    }
+  });
+
+  function toggleDetails() {
+    showDetails = !showDetails;
+    try {
+      localStorage.setItem(DETAILS_KEY, String(showDetails));
+    } catch {
+      // Preference only.
+    }
+  }
+
+  let backgroundImages = $derived(
+    (
+      (page.data?.images || []) as Array<{ id: string; filename: string; originalName: string }>
+    ).map((image) => ({
+      ...image,
+      url: `/api/projects/${page.params.id}/images/${image.filename}`
+    }))
+  );
+
   async function submitChapterReorder(ids: string[]) {
     const form = new FormData();
     form.set('chapterIds', JSON.stringify(ids));
@@ -534,11 +586,11 @@
   >
 </svelte:head>
 
-<div class="flex h-[calc(100vh-4rem)]">
-  <!-- Left panel: chapter/scene tree — hidden while writing in Zen mode -->
+<div class="flex h-full min-h-0">
   <div
-    class="w-72 flex-shrink-0 overflow-y-auto border-r border-border bg-card p-4 sm:w-80"
+    class="w-full flex-shrink-0 overflow-y-auto border-r border-border bg-card p-4 md:w-72 lg:w-80"
     class:hidden={zen.active}
+    class:max-md:hidden={!!activeSceneId}
   >
     <div class="mb-4">
       <a
@@ -663,33 +715,26 @@
       </div>
     {/if}
 
-    <div class="space-y-2">
+    <ol class="space-y-2" aria-label="Chapters">
       {#each chapters as chapter, i (chapter.id)}
-        <div
+        {@const expanded = expandedChapters.has(chapter.id)}
+        <li
           class="rounded-lg border border-border"
-          draggable="true"
-          role="listitem"
+          draggable={canEdit && renamingChapterId !== chapter.id}
           ondragstart={(e) => handleChapterDragStart(e, chapter.id)}
           ondragover={handleDragOver}
           ondrop={(e) => handleChapterDrop(e, chapter.id)}
         >
-          <div
-            class="group flex cursor-pointer items-center gap-1 px-3 py-2 hover:bg-secondary/50"
-            onclick={() => toggleChapter(chapter.id)}
-            role="button"
-            tabindex="0"
-            onkeypress={(e) => {
-              if (e.key === 'Enter') toggleChapter(chapter.id);
-            }}
-          >
-            <GripVertical class="h-3 w-3 cursor-grab text-muted-foreground opacity-40" />
-            <span class="text-xs text-muted-foreground">{i + 1}</span>
+          <div class="group flex items-center gap-1 px-2 py-1.5 hover:bg-secondary/50">
+            <GripVertical
+              class="h-3 w-3 shrink-0 cursor-grab text-muted-foreground opacity-40"
+              aria-hidden="true"
+            />
             {#if renamingChapterId === chapter.id}
               <form
                 method="POST"
                 action="?/renameChapter"
                 class="flex flex-1 items-center gap-1"
-                onclick={(e) => e.stopPropagation()}
                 use:enhance={() => {
                   return async ({ result, update }) => {
                     if (result.type === 'success') renamingChapterId = null;
@@ -698,100 +743,169 @@
                 }}
               >
                 <input type="hidden" name="chapterId" value={chapter.id} />
-                <Input name="title" value={chapter.title} class="h-6 text-sm" required autofocus />
+                <Input
+                  name="title"
+                  value={chapter.title}
+                  class="h-6 text-sm"
+                  aria-label="Chapter title"
+                  required
+                  autofocus
+                  onkeydown={(e) => {
+                    if (e.key === 'Escape') renamingChapterId = null;
+                  }}
+                />
                 <Button type="submit" size="xs">Save</Button>
               </form>
             {:else}
-              <span
-                class="flex-1 truncate text-sm font-medium"
-                title="Double-click to rename"
-                ondblclick={(e) => {
-                  e.stopPropagation();
+              <button
+                type="button"
+                class="flex min-w-0 flex-1 items-center gap-1.5 text-left"
+                aria-expanded={expanded}
+                onclick={() => toggleChapter(chapter.id)}
+                ondblclick={() => {
                   if (canEdit) renamingChapterId = chapter.id;
                 }}
-                role="presentation"
               >
-                {chapter.title}
+                {#if expanded}
+                  <ChevronDown class="h-3 w-3 shrink-0 text-muted-foreground" />
+                {:else}
+                  <ChevronRight class="h-3 w-3 shrink-0 text-muted-foreground" />
+                {/if}
+                <span class="text-xs text-muted-foreground">{i + 1}</span>
+                <span class="truncate text-sm font-medium">{chapter.title}</span>
+              </button>
+              <span class="text-xs text-muted-foreground">
+                {formatWordCount(chapterWords(chapter))}w
               </span>
-            {/if}
-            <span class="text-xs text-muted-foreground">
-              {formatWordCount(chapterWords(chapter))}w
-            </span>
-            <div
-              class="opacity-0 group-hover:opacity-100"
-              onclick={(e) => e.stopPropagation()}
-              onkeypress={(e) => {
-                if (e.key === 'Enter') e.stopPropagation();
-              }}
-              role="button"
-              tabindex="-1"
-            >
-              <form method="POST" action="?/deleteChapter">
-                <input type="hidden" name="chapterId" value={chapter.id} />
-                <Button type="submit" variant="ghost" size="icon-xs" aria-label="Delete chapter">
-                  <Trash2 class="h-3 w-3 text-destructive" />
-                </Button>
-              </form>
-            </div>
-            {#if expandedChapters.has(chapter.id)}
-              <ChevronDown class="h-3 w-3 text-muted-foreground" />
-            {:else}
-              <ChevronRight class="h-3 w-3 text-muted-foreground" />
+              {#if canEdit}
+                <div
+                  class="flex items-center opacity-0 group-hover:opacity-100 focus-within:opacity-100 max-md:opacity-100"
+                >
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    aria-label="Rename chapter {chapter.title}"
+                    title="Rename"
+                    onclick={() => (renamingChapterId = chapter.id)}
+                  >
+                    <Pencil class="h-3 w-3" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    aria-label="Move chapter {chapter.title} up"
+                    title="Move up"
+                    disabled={i === 0}
+                    onclick={() => moveChapter(chapter.id, -1)}
+                  >
+                    <ArrowUp class="h-3 w-3" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    aria-label="Move chapter {chapter.title} down"
+                    title="Move down"
+                    disabled={i === chapters.length - 1}
+                    onclick={() => moveChapter(chapter.id, 1)}
+                  >
+                    <ArrowDown class="h-3 w-3" />
+                  </Button>
+                  <form method="POST" action="?/deleteChapter">
+                    <input type="hidden" name="chapterId" value={chapter.id} />
+                    <Button
+                      type="submit"
+                      variant="ghost"
+                      size="icon-xs"
+                      aria-label="Delete chapter {chapter.title}"
+                      title="Delete chapter"
+                    >
+                      <Trash2 class="h-3 w-3 text-destructive" />
+                    </Button>
+                  </form>
+                </div>
+              {/if}
             {/if}
           </div>
 
-          {#if expandedChapters.has(chapter.id)}
+          {#if expanded}
             <div class="border-t border-border pb-2">
-              {#each chapter.scenes as scene, j (scene.id)}
-                <div
-                  class="group flex cursor-pointer items-center gap-1 px-3 py-1.5 pl-6 text-sm"
-                  class:bg-secondary={activeSceneId === scene.id}
-                  draggable="true"
-                  role="button"
-                  tabindex="0"
-                  ondragstart={(e) => handleSceneDragStart(e, scene.id)}
-                  ondragover={handleDragOver}
-                  ondrop={(e) => handleSceneDrop(e, chapter.id, scene.id)}
-                  onclick={() => openScene(scene, chapter.id)}
-                  onkeydown={(e) => {
-                    if (e.key === 'Enter') openScene(scene, chapter.id);
-                  }}
-                >
-                  <GripVertical
-                    class="h-3 w-3 cursor-grab text-muted-foreground opacity-0 group-hover:opacity-100"
-                  />
-                  <span
-                    class="h-1.5 w-1.5 shrink-0 rounded-full {STATUS_DOTS[scene.status || 'draft']}"
-                    title={STATUS_LABELS[scene.status || 'draft']}
-                  ></span>
-                  <span class="flex-1 truncate">{scene.title || `Scene ${j + 1}`}</span>
-                  <span class="text-xs text-muted-foreground group-hover:hidden">
-                    {formatWordCount(countWords(scene.body))}
-                  </span>
-                  <div
-                    class="hidden group-hover:block"
-                    onclick={(e) => e.stopPropagation()}
-                    onkeypress={(e) => {
-                      if (e.key === 'Enter') e.stopPropagation();
-                    }}
-                    role="button"
-                    tabindex="-1"
+              <ol aria-label="Scenes in {chapter.title}">
+                {#each chapter.scenes as scene, j (scene.id)}
+                  {@const label = scene.title || `Scene ${j + 1}`}
+                  <li
+                    class="group flex items-center gap-1 py-1 pr-2 pl-4 text-sm"
+                    class:bg-secondary={activeSceneId === scene.id}
+                    draggable={canEdit}
+                    ondragstart={(e) => handleSceneDragStart(e, scene.id)}
+                    ondragover={handleDragOver}
+                    ondrop={(e) => handleSceneDrop(e, chapter.id, scene.id)}
                   >
-                    <form method="POST" action="?/deleteScene">
-                      <input type="hidden" name="chapterId" value={chapter.id} />
-                      <input type="hidden" name="sceneId" value={scene.id} />
-                      <Button
-                        type="submit"
-                        variant="ghost"
-                        size="icon-xs"
-                        aria-label="Delete scene"
+                    <GripVertical
+                      class="h-3 w-3 shrink-0 cursor-grab text-muted-foreground opacity-0 group-hover:opacity-100"
+                      aria-hidden="true"
+                    />
+                    <button
+                      type="button"
+                      class="flex min-w-0 flex-1 items-center gap-1.5 text-left"
+                      aria-current={activeSceneId === scene.id ? 'true' : undefined}
+                      onclick={() => openScene(scene, chapter.id)}
+                    >
+                      <span
+                        class="h-1.5 w-1.5 shrink-0 rounded-full {STATUS_DOTS[
+                          scene.status || 'draft'
+                        ]}"
+                        aria-hidden="true"
+                      ></span>
+                      <span class="truncate">{label}</span>
+                      <span class="sr-only">({STATUS_LABELS[scene.status || 'draft']})</span>
+                    </button>
+                    <span
+                      class="text-xs text-muted-foreground group-hover:hidden group-focus-within:hidden"
+                    >
+                      {formatWordCount(countWords(scene.body))}
+                    </span>
+                    {#if canEdit}
+                      <div
+                        class="hidden items-center group-hover:flex group-focus-within:flex max-md:flex"
                       >
-                        <Trash2 class="h-3 w-3 text-destructive" />
-                      </Button>
-                    </form>
-                  </div>
-                </div>
-              {/each}
+                        <Button
+                          variant="ghost"
+                          size="icon-xs"
+                          aria-label="Move {label} up"
+                          title="Move up"
+                          disabled={j === 0}
+                          onclick={() => moveScene(chapter, scene.id, -1)}
+                        >
+                          <ArrowUp class="h-3 w-3" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon-xs"
+                          aria-label="Move {label} down"
+                          title="Move down"
+                          disabled={j === chapter.scenes.length - 1}
+                          onclick={() => moveScene(chapter, scene.id, 1)}
+                        >
+                          <ArrowDown class="h-3 w-3" />
+                        </Button>
+                        <form method="POST" action="?/deleteScene">
+                          <input type="hidden" name="chapterId" value={chapter.id} />
+                          <input type="hidden" name="sceneId" value={scene.id} />
+                          <Button
+                            type="submit"
+                            variant="ghost"
+                            size="icon-xs"
+                            aria-label="Delete {label}"
+                            title="Delete scene"
+                          >
+                            <Trash2 class="h-3 w-3 text-destructive" />
+                          </Button>
+                        </form>
+                      </div>
+                    {/if}
+                  </li>
+                {/each}
+              </ol>
               <form
                 method="POST"
                 action="?/createScene"
@@ -818,156 +932,145 @@
               </form>
             </div>
           {/if}
-        </div>
+        </li>
+      {:else}
+        <li class="px-1 text-sm text-muted-foreground">
+          Chapters hold your scenes. Add one to start writing.
+        </li>
       {/each}
-    </div>
+    </ol>
   </div>
 
   <!-- Right panel: scene editor -->
-  <div class="flex-1 overflow-y-auto">
+  <div class="flex min-h-0 min-w-0 flex-1" class:max-md:hidden={!activeSceneId}>
     {#if activeSceneId}
-      <div class="p-6">
-        <div class="mb-4 flex items-center justify-between gap-3">
+      <div class="flex min-h-0 min-w-0 flex-1 flex-col p-3 md:p-4">
+        <div class="mb-2 flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            class="md:hidden"
+            aria-label="Back to chapters"
+            onclick={closeScene}
+          >
+            <ArrowLeft class="h-4 w-4" />
+          </Button>
           <input
             type="text"
             bind:value={sceneTitle}
-            class="min-w-0 flex-1 border-0 bg-transparent text-lg font-semibold outline-none"
+            aria-label="Scene title"
+            class="min-w-0 flex-1 border-0 bg-transparent text-lg font-semibold outline-none max-md:basis-[calc(100%-3rem)]"
             placeholder="Scene title..."
           />
-          <div class="flex items-center gap-2" class:hidden={zen.active}>
-            <div class="flex items-center gap-1 rounded-full border border-border p-0.5">
-              {#each STATUS_ORDER as option (option)}
+          <span
+            class="flex items-center gap-1 whitespace-nowrap text-xs"
+            class:text-destructive={saveError}
+            class:text-muted-foreground={!saveError}
+            role="status"
+          >
+            {#if saveError}
+              <CloudOff class="h-3 w-3" />
+              {saveError}
+              {#if conflict}
+                <button type="button" class="underline" onclick={() => void reloadLatest()}
+                  >Reload latest</button
+                >
                 <button
                   type="button"
-                  class="flex items-center gap-1 rounded-full px-2 py-0.5 text-xs"
-                  class:bg-secondary={sceneStatus === option}
-                  class:text-muted-foreground={sceneStatus !== option}
-                  disabled={!canEdit}
-                  onclick={() => (sceneStatus = option)}
+                  class="underline"
+                  onclick={() => {
+                    if (window.confirm('Overwrite the changes made elsewhere?'))
+                      void saveScene(true);
+                  }}>Overwrite with my edits</button
                 >
-                  <span class="h-1.5 w-1.5 rounded-full {STATUS_DOTS[option]}"></span>
-                  {STATUS_LABELS[option]}
-                </button>
-              {/each}
-            </div>
-            <span class="whitespace-nowrap text-xs text-muted-foreground">
-              {formatWordCount(sceneWords)} words
-            </span>
-            <span
-              class="flex items-center gap-1 whitespace-nowrap text-xs"
-              class:text-destructive={saveError}
-              class:text-muted-foreground={!saveError}
-            >
-              {#if saveError}
-                <CloudOff class="h-3 w-3" />
-                {saveError}
-                {#if conflict}
-                  <button type="button" onclick={() => void reloadLatest()}>Reload latest</button>
-                  <button
-                    type="button"
-                    onclick={() => {
-                      if (window.confirm('Overwrite the changes made elsewhere?'))
-                        void saveScene(true);
-                    }}>Overwrite with my edits</button
-                  >
-                {/if}
-              {:else if saving}
-                <Loader2 class="h-3 w-3 animate-spin" />
-                Saving…
-              {:else if dirty}
-                Unsaved changes
-              {:else if lastSavedAt}
-                <Check class="h-3 w-3" />
-                Saved
               {/if}
-            </span>
-            <Button onclick={() => saveScene()} disabled={saving || !dirty || !canEdit}>
+            {:else if saving}
+              <Loader2 class="h-3 w-3 animate-spin" />
+              Saving…
+            {:else if dirty}
+              Unsaved changes
+            {:else if lastSavedAt}
+              <Check class="h-3 w-3" />
+              Saved
+            {/if}
+          </span>
+          <span class="whitespace-nowrap text-xs text-muted-foreground" class:hidden={zen.active}>
+            {formatWordCount(sceneWords)} words
+          </span>
+          <div class="flex items-center gap-1" class:hidden={zen.active}>
+            <Button
+              size="sm"
+              onclick={() => saveScene()}
+              disabled={saving || !dirty || !canEdit}
+              title="Save (Ctrl+S)"
+            >
               <Save class="h-4 w-4" />
               Save
+            </Button>
+            <Button
+              variant={showDetails ? 'secondary' : 'outline'}
+              size="icon-sm"
+              title="Scene details"
+              aria-label="Scene details"
+              aria-expanded={showDetails}
+              aria-controls="scene-details"
+              onclick={toggleDetails}
+            >
+              <PanelRight class="h-4 w-4" />
             </Button>
             <Button
               variant="outline"
               size="icon-sm"
               title={zen.active ? 'Exit focus mode' : 'Focus mode (F11)'}
               aria-label={zen.active ? 'Exit focus mode' : 'Focus mode'}
+              aria-pressed={zen.active}
               onclick={() => zen.toggle()}
             >
               <Scan class="h-4 w-4" />
             </Button>
             <Button
+              type="button"
               variant="outline"
-              size="icon-sm"
-              title="Convert to Note"
-              aria-label="Convert to Note"
-              onclick={async () => {
-                const f = new FormData();
-                f.set('chapterId', activeChapterId);
-                f.set('sceneId', activeSceneId || '');
-                await fetch('?/convertToNote', { method: 'POST', body: f });
-                savedSnapshot = JSON.stringify(currentValues());
-                await invalidateAll();
-                await closeScene();
-              }}
+              size="sm"
+              class="max-md:hidden"
+              onclick={closeScene}>Close</Button
             >
-              <SwitchCamera class="h-4 w-4" />
-            </Button>
-            <Button type="button" variant="outline" onclick={closeScene}>Close</Button>
           </div>
         </div>
 
-        <div class="mb-4 flex flex-wrap gap-4 text-sm" class:hidden={zen.active}>
-          <div class="flex items-center gap-2">
-            <label for="scene-narrator" class="text-muted-foreground">Narrator:</label>
-            <Input
-              id="scene-narrator"
-              type="text"
-              list="scene-characters"
-              bind:value={sceneNarrator}
-              class="h-7 w-auto"
-              placeholder="Who narrates?"
-            />
+        <div class="mb-2 flex flex-wrap items-center gap-2 text-xs" class:hidden={zen.active}>
+          <div
+            class="flex items-center gap-1 rounded-full border border-border p-0.5"
+            role="radiogroup"
+            aria-label="Scene status"
+          >
+            {#each STATUS_ORDER as option (option)}
+              <button
+                type="button"
+                role="radio"
+                aria-checked={sceneStatus === option}
+                class="flex items-center gap-1 rounded-full px-2 py-0.5"
+                class:bg-secondary={sceneStatus === option}
+                class:text-muted-foreground={sceneStatus !== option}
+                disabled={!canEdit}
+                onclick={() => (sceneStatus = option)}
+              >
+                <span class="h-1.5 w-1.5 rounded-full {STATUS_DOTS[option]}" aria-hidden="true"
+                ></span>
+                {STATUS_LABELS[option]}
+              </button>
+            {/each}
           </div>
-          <div class="flex items-center gap-2">
-            <label for="scene-time" class="text-muted-foreground">Time:</label>
-            <Input
-              id="scene-time"
-              type="text"
-              bind:value={sceneTime}
-              class="h-7 w-auto"
-              placeholder="When?"
-            />
-          </div>
-          <div class="flex items-center gap-2">
-            <label for="scene-place" class="text-muted-foreground">Place:</label>
-            <Input
-              id="scene-place"
-              type="text"
-              list="scene-locations"
-              bind:value={scenePlace}
-              class="h-7 w-auto"
-              placeholder="Where?"
-            />
-          </div>
-          <div class="flex items-center gap-2">
-            <span class="text-muted-foreground">Participants:</span>
-            <EntityPicker
-              entities={pickerEntities}
-              bind:value={sceneParticipants}
-              types={['character', 'organization', 'species']}
-              placeholder="Add character"
-              searchPlaceholder="Search characters…"
-              disabled={!canEdit}
-            />
-          </div>
-          <div class="flex items-center gap-2">
-            <Image class="h-3.5 w-3.5 text-muted-foreground" />
-            <Input
-              type="text"
-              bind:value={sceneBackgroundImage}
-              class="h-7 w-auto"
-              placeholder="Background image URL for Zen Mode"
-            />
-          </div>
+          {#if !showDetails}
+            {#each [sceneNarrator && `Narrator: ${sceneNarrator}`, sceneTime && `Time: ${sceneTime}`, scenePlace && `Place: ${scenePlace}`, sceneParticipants.length > 0 && `${sceneParticipants.length} participant${sceneParticipants.length === 1 ? '' : 's'}`].filter(Boolean) as chip (chip)}
+              <button
+                type="button"
+                class="rounded-full bg-secondary px-2 py-0.5 text-muted-foreground hover:text-foreground"
+                onclick={toggleDetails}>{chip}</button
+              >
+            {/each}
+          {/if}
         </div>
 
         <datalist id="scene-characters">
@@ -1004,18 +1107,118 @@
           </div>
         {/if}
 
-        {#key `${activeSceneId}:${editorEpoch}`}
-          <Editor
-            content={sceneBody}
-            entities={page.data?.entities || []}
-            images={page.data?.images || []}
-            projectId={page.params.id || ''}
-            onUpdate={(md) => (sceneBody = md)}
-          />
-        {/key}
+        <div class="flex min-h-0 flex-1">
+          {#key `${activeSceneId}:${editorEpoch}`}
+            <Editor
+              class="min-h-0 flex-1"
+              content={sceneBody}
+              entities={page.data?.entities || []}
+              images={page.data?.images || []}
+              projectId={page.params.id || ''}
+              onUpdate={(md) => (sceneBody = md)}
+            />
+          {/key}
+        </div>
       </div>
+
+      {#if showDetails && !zen.active}
+        <aside
+          id="scene-details"
+          aria-label="Scene details"
+          class="w-72 shrink-0 space-y-3 overflow-y-auto border-l border-border bg-card p-4 text-sm max-lg:fixed max-lg:inset-y-0 max-lg:right-0 max-lg:z-[60] max-lg:w-80 max-lg:max-w-full max-lg:shadow-xl"
+        >
+          <div class="flex items-center justify-between">
+            <h2 class="font-semibold">Scene details</h2>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              aria-label="Close details"
+              onclick={toggleDetails}
+            >
+              <X class="h-3.5 w-3.5" />
+            </Button>
+          </div>
+          <div class="space-y-1">
+            <Label for="scene-narrator">Narrator</Label>
+            <Input
+              id="scene-narrator"
+              type="text"
+              list="scene-characters"
+              bind:value={sceneNarrator}
+              placeholder="Who narrates?"
+            />
+          </div>
+          <div class="space-y-1">
+            <Label for="scene-time">Time</Label>
+            <Input id="scene-time" type="text" bind:value={sceneTime} placeholder="When?" />
+          </div>
+          <div class="space-y-1">
+            <Label for="scene-place">Place</Label>
+            <Input
+              id="scene-place"
+              type="text"
+              list="scene-locations"
+              bind:value={scenePlace}
+              placeholder="Where?"
+            />
+          </div>
+          <div class="space-y-1">
+            <span class="text-sm font-medium">Participants</span>
+            <EntityPicker
+              entities={pickerEntities}
+              bind:value={sceneParticipants}
+              types={['character', 'organization', 'species']}
+              placeholder="Add character"
+              searchPlaceholder="Search characters…"
+              disabled={!canEdit}
+            />
+          </div>
+          <div class="space-y-1">
+            <Label for="scene-background">Focus mode background</Label>
+            <select
+              id="scene-background"
+              class="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm"
+              bind:value={sceneBackgroundImage}
+              onchange={() => (zen.backgroundImage = sceneBackgroundImage || null)}
+            >
+              <option value="">None</option>
+              {#each backgroundImages as image (image.id)}
+                <option value={image.url}>{image.originalName}</option>
+              {/each}
+              {#if sceneBackgroundImage && !backgroundImages.some((i) => i.url === sceneBackgroundImage)}
+                <option value={sceneBackgroundImage}>Custom: {sceneBackgroundImage}</option>
+              {/if}
+            </select>
+            {#if backgroundImages.length === 0}
+              <p class="text-xs text-muted-foreground">
+                Upload pictures in <a class="underline" href="/projects/{page.params.id}/images"
+                  >Images</a
+                > to use them here.
+              </p>
+            {/if}
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            class="w-full"
+            disabled={!canEdit}
+            onclick={async () => {
+              const f = new FormData();
+              f.set('chapterId', activeChapterId);
+              f.set('sceneId', activeSceneId || '');
+              await fetch('?/convertToNote', { method: 'POST', body: f });
+              savedSnapshot = JSON.stringify(currentValues());
+              await invalidateAll();
+              await closeScene();
+            }}
+          >
+            <SwitchCamera class="h-4 w-4" />
+            Convert to note
+          </Button>
+        </aside>
+      {/if}
     {:else}
-      <div class="flex h-full items-center justify-center text-muted-foreground">
+      <div class="flex h-full flex-1 items-center justify-center text-muted-foreground">
         <div class="text-center">
           <BookOpen class="mx-auto h-12 w-12 opacity-20" />
           <p class="mt-2">Select a scene to start writing</p>

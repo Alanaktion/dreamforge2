@@ -19,6 +19,7 @@ export const load: LayoutServerLoad = async ({ locals, url }) => {
     entityType?: string;
   }> = [];
   let projectId = '';
+  let projectName = '';
   let storageProblems: Array<{ file: string; message: string }> = [];
   const entityCounts: Record<string, number> = {};
 
@@ -28,6 +29,7 @@ export const load: LayoutServerLoad = async ({ locals, url }) => {
     projectId = match[1];
     const access = locals.user ? getProjectAccess(projectId, locals.user.id) : null;
     if (access) {
+      projectName = access.project.name;
       scanProject(projectId, access.project.dataPath);
       watchProject(projectId, access.project.dataPath);
       storageProblems = projectProblems(access.project.dataPath);
@@ -64,6 +66,7 @@ export const load: LayoutServerLoad = async ({ locals, url }) => {
           id: locals.user.id,
           email: locals.user.email,
           username: locals.user.username,
+          isAdmin: !!locals.user.isAdmin,
           createdAt: locals.user.createdAt
         }
       : null,
@@ -71,6 +74,7 @@ export const load: LayoutServerLoad = async ({ locals, url }) => {
     bookmarks,
     entityCounts,
     projectId,
+    projectName,
     allowRegistration: registrationAllowed()
   };
 };

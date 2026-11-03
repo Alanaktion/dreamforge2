@@ -41,7 +41,7 @@ export interface EntityData {
   modifiedAt: string;
 }
 
-function getEntityDir(projectPath: string, type: EntityType): string {
+export function getEntityDir(projectPath: string, type: EntityType): string {
   if (type === 'note') {
     return path.join(projectPath, 'notes', '_project');
   }

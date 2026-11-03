@@ -9,18 +9,100 @@
     FolderOpen,
     BookOpen,
     Users,
-    Map
+    Map,
+    Sparkles
   } from '@lucide/svelte';
   import { cn, formatDate } from '$lib/utils';
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
   import { Label } from '$lib/components/ui/label';
   import { Textarea } from '$lib/components/ui/textarea';
+  import { formatWordCount } from '$lib/utils/wordCount';
 
   let showCreate = $state(false);
   let name = $state('');
   let description = $state('');
+  let creating = $state(false);
+  let presetChoice = $state('blank');
 </script>
+
+{#snippet summaryLine(project: {
+  modifiedAt: string;
+  summary: { entityCount: number; storyCount: number; wordCount: number } | null;
+})}
+  <p class="mt-1 flex flex-wrap gap-x-3 text-xs text-muted-foreground">
+    {#if project.summary}
+      <span>{formatWordCount(project.summary.wordCount)} words</span>
+      <span
+        >{project.summary.storyCount}
+        {project.summary.storyCount === 1 ? 'story' : 'stories'}</span
+      >
+      <span
+        >{project.summary.entityCount} world
+        {project.summary.entityCount === 1 ? 'entry' : 'entries'}</span
+      >
+    {/if}
+    <span>Last activity {formatDate(project.modifiedAt)}</span>
+  </p>
+{/snippet}
+
+{#snippet projectCard(project: {
+  id: string;
+  name: string;
+  description: string | null;
+  pinned: boolean;
+  isOwner: boolean;
+  modifiedAt: string;
+  summary: { entityCount: number; storyCount: number; wordCount: number } | null;
+})}
+  <div
+    class={cn(
+      'flex items-center justify-between rounded-lg border border-border bg-card p-4',
+      project.pinned && 'border-primary/50'
+    )}
+  >
+    <div class="flex-1">
+      <div class="flex items-center gap-2">
+        {#if project.pinned}
+          <Pin class="h-3 w-3 text-primary" />
+        {/if}
+        <a href="/projects/{project.id}" class="font-semibold hover:underline">
+          {project.name}
+        </a>
+      </div>
+      {#if project.description}
+        <p class="mt-1 text-sm text-muted-foreground">{project.description}</p>
+      {/if}
+      {@render summaryLine(project)}
+    </div>
+    <div class="flex items-center gap-1">
+      <form method="POST" action="?/togglePin" use:enhance>
+        <input type="hidden" name="projectId" value={project.id} />
+        <Button
+          type="submit"
+          variant="ghost"
+          size="icon-sm"
+          aria-label={project.pinned ? `Unpin ${project.name}` : `Pin ${project.name}`}
+          title={project.pinned ? 'Unpin' : 'Pin to top'}
+        >
+          {#if project.pinned}
+            <PinOff class="h-4 w-4" />
+          {:else}
+            <Pin class="h-4 w-4" />
+          {/if}
+        </Button>
+      </form>
+      <Button
+        href="/projects/{project.id}"
+        variant="ghost"
+        size="icon-sm"
+        aria-label="Open {project.name}"
+      >
+        <ExternalLink class="h-4 w-4" />
+      </Button>
+    </div>
+  </div>
+{/snippet}
 
 <svelte:head>
   <title>Projects — DreamForge</title>
@@ -42,13 +124,10 @@
         method="POST"
         action="?/create"
         use:enhance={() => {
-          return async ({ result, update }) => {
-            if (result.type === 'success') {
-              showCreate = false;
-              name = '';
-              description = '';
-              update();
-            }
+          creating = true;
+          return async ({ update }) => {
+            creating = false;
+            await update();
           };
         }}
         class="space-y-4"
@@ -61,27 +140,38 @@
           <Label for="description">Description</Label>
           <Textarea id="description" name="description" bind:value={description} />
         </div>
+        <fieldset class="space-y-2">
+          <legend class="text-sm font-medium">Start from</legend>
+          <div class="grid gap-2 sm:grid-cols-2">
+            {#each Object.entries((page.data?.presets ?? {}) as Record<string, { label: string; description: string }>) as [value, preset] (value)}
+              <label
+                class="flex cursor-pointer gap-2 rounded-lg border border-border p-3 text-sm has-[:checked]:border-primary has-[:checked]:bg-secondary"
+              >
+                <input type="radio" name="preset" {value} bind:group={presetChoice} class="mt-1" />
+                <span>
+                  <span class="block font-medium">{preset.label}</span>
+                  <span class="block text-xs text-muted-foreground">{preset.description}</span>
+                </span>
+              </label>
+            {/each}
+          </div>
+        </fieldset>
         <div class="flex gap-2">
-          <Button type="submit">Create</Button>
+          <Button type="submit" disabled={creating}>Create</Button>
           <Button type="button" variant="outline" onclick={() => (showCreate = false)}
             >Cancel</Button
           >
         </div>
       </form>
+      <form method="POST" action="?/sample" use:enhance class="mt-3 border-t border-border pt-3">
+        <Button type="submit" variant="link" size="sm" class="px-0">
+          <Sparkles class="h-4 w-4" />
+          Or explore a sample world first
+        </Button>
+      </form>
     </div>
   {/if}
 
-  <form
-    method="POST"
-    action="?/import"
-    enctype="multipart/form-data"
-    use:enhance
-    class="mb-6 space-y-2"
-  >
-    <Label for="archive">Import project from ZIP (up to 20 MB)</Label>
-    <input id="archive" name="archive" type="file" accept=".zip" required />
-    <Button type="submit" variant="outline">Import project</Button>
-  </form>
   {#if page.form?.error}<p role="alert" class="text-destructive">{page.form.error}</p>{/if}
   <div class="space-y-3">
     {#if (page.data?.projects?.length ?? 0) === 0 && (page.data?.sharedProjects?.length ?? 0) === 0}
@@ -132,93 +222,52 @@
             </div>
           </div>
         </div>
-        <Button onclick={() => (showCreate = true)} size="lg">
-          <Plus class="h-4 w-4" />
-          Create Your First Project
-        </Button>
+        <div class="flex flex-wrap justify-center gap-2">
+          <Button onclick={() => (showCreate = true)} size="lg">
+            <Plus class="h-4 w-4" />
+            Create Your First Project
+          </Button>
+          <form method="POST" action="?/sample" use:enhance>
+            <Button type="submit" size="lg" variant="outline">
+              <Sparkles class="h-4 w-4" />
+              Explore a sample world
+            </Button>
+          </form>
+        </div>
+        <p class="mt-3 max-w-md text-xs text-muted-foreground">
+          The sample is a normal project with a few characters, places, a two-chapter story,
+          relations, and a timeline. Delete it from its Settings page whenever you like.
+        </p>
       </div>
     {/if}
 
     {#each page.data?.projects || [] as project (project.id)}
-      <div
-        class={cn(
-          'flex items-center justify-between rounded-lg border border-border bg-card p-4',
-          project.pinned && 'border-primary/50'
-        )}
-      >
-        <div class="flex-1">
-          <div class="flex items-center gap-2">
-            {#if project.pinned}
-              <Pin class="h-3 w-3 text-primary" />
-            {/if}
-            <a href="/projects/{project.id}" class="font-semibold hover:underline">
-              {project.name}
-            </a>
-          </div>
-          {#if project.description}
-            <p class="mt-1 text-sm text-muted-foreground">{project.description}</p>
-          {/if}
-          <p class="mt-1 text-xs text-muted-foreground">
-            Modified {formatDate(project.modifiedAt)}
-          </p>
-        </div>
-        <div class="flex items-center gap-1">
-          <form method="POST" action="?/togglePin">
-            <input type="hidden" name="projectId" value={project.id} />
-            <Button
-              type="submit"
-              variant="ghost"
-              size="icon-sm"
-              aria-label={project.pinned ? 'Unpin project' : 'Pin project'}
-            >
-              {#if project.pinned}
-                <PinOff class="h-4 w-4" />
-              {:else}
-                <Pin class="h-4 w-4" />
-              {/if}
-            </Button>
-          </form>
-          <Button
-            href="/projects/{project.id}"
-            variant="ghost"
-            size="icon-sm"
-            aria-label="Open project"
-          >
-            <ExternalLink class="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
+      {@render projectCard(project)}
     {/each}
 
     {#if (page.data?.sharedProjects?.length ?? 0) > 0}
       <div class="mt-6">
         <h2 class="mb-3 text-sm font-medium text-muted-foreground">Shared with me</h2>
-        {#each page.data.sharedProjects as project (project.id)}
-          <div
-            class="flex items-center justify-between rounded-lg border border-border bg-card p-4 mb-2"
-          >
-            <div class="flex-1">
-              <a href="/projects/{project.id}" class="font-semibold hover:underline">
-                {project.name}
-              </a>
-              {#if project.description}
-                <p class="mt-1 text-sm text-muted-foreground">{project.description}</p>
-              {/if}
-              <p class="mt-1 text-xs text-muted-foreground">
-                Modified {formatDate(project.modifiedAt)}
-              </p>
-            </div>
-            <Button
-              href="/projects/{project.id}"
-              variant="ghost"
-              size="icon-sm"
-              aria-label="Open project"
-            >
-              <ExternalLink class="h-4 w-4" />
-            </Button>
-          </div>
-        {/each}
+        <div class="space-y-3">
+          {#each page.data.sharedProjects as project (project.id)}
+            {@render projectCard(project)}
+          {/each}
+        </div>
       </div>
     {/if}
   </div>
+  <details class="mt-8 rounded-lg border border-border p-4 text-sm">
+    <summary class="cursor-pointer font-medium">Import a project</summary>
+    <form
+      method="POST"
+      action="?/import"
+      enctype="multipart/form-data"
+      use:enhance
+      class="mt-3 space-y-2"
+    >
+      <Label for="archive">Import project from ZIP (up to 20 MB)</Label>
+      <input id="archive" name="archive" type="file" accept=".zip" required />
+      <Button type="submit" variant="outline">Import project</Button>
+    </form>
+  </details>
 </div>

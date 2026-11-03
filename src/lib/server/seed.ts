@@ -27,6 +27,7 @@ export async function seed() {
         username: 'admin',
         passwordHash,
         mustChangePassword: true,
+        isAdmin: true,
         createdAt: new Date().toISOString()
       })
       .run();

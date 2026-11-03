@@ -15,6 +15,7 @@
   } from '$lib/components/ui/select';
   import RelationGraph from '$lib/components/RelationGraph.svelte';
   import { RELATION_TYPES, relationLabel } from '$lib/relationTypes';
+  import { entityTypeToRoute } from '$lib/utils/entityTypes';
 
   let showCreate = $state(false);
   let sourceId = $state('');
@@ -119,19 +120,19 @@
     projectId={page.params.id || ''}
   />
 
-  <!-- List -->
-  <div class="space-y-2">
-    {#each page.data?.relations || [] as rel}
+  <h2 class="sr-only">Relation list</h2>
+  <ul class="space-y-2" aria-label="Relations">
+    {#each page.data?.relations || [] as rel (rel.id)}
       {@const source = (page.data?.entities || []).find((e: any) => e.id === rel.sourceId)}
       {@const target = (page.data?.entities || []).find((e: any) => e.id === rel.targetId)}
-      <div
+      <li
         class="flex items-center justify-between rounded-lg border border-border bg-card px-4 py-3"
       >
-        <div class="flex items-center gap-3 text-sm">
-          <Share2 class="h-4 w-4 text-muted-foreground" />
+        <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+          <Share2 class="h-4 w-4 text-muted-foreground" aria-hidden="true" />
           {#if source}
             <a
-              href="/projects/{page.params.id}/{source.type}/{source.id}"
+              href="/projects/{page.params.id}/{entityTypeToRoute(source.type)}/{source.id}"
               class="font-medium hover:underline">{source.name}</a
             >
           {:else}
@@ -142,7 +143,7 @@
           >
           {#if target}
             <a
-              href="/projects/{page.params.id}/{target.type}/{target.id}"
+              href="/projects/{page.params.id}/{entityTypeToRoute(target.type)}/{target.id}"
               class="font-medium hover:underline">{target.name}</a
             >
           {:else}
@@ -151,16 +152,23 @@
         </div>
         <form method="POST" action="?/delete">
           <input type="hidden" name="relId" value={rel.id} />
-          <Button type="submit" variant="ghost" size="icon-sm" aria-label="Delete relation">
+          <Button
+            type="submit"
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Delete relation {source?.name ?? rel.sourceId} {rel.label ||
+              relationLabel(rel.relationType)} {target?.name ?? rel.targetId}"
+          >
             <Trash2 class="h-4 w-4 text-destructive" />
           </Button>
         </form>
-      </div>
+      </li>
     {/each}
-    {#if (page.data?.relations || []).length === 0}
-      <p class="py-12 text-center text-muted-foreground">
-        No relations yet. Add one to start mapping your world.
-      </p>
-    {/if}
-  </div>
+  </ul>
+  {#if (page.data?.relations || []).length === 0}
+    <p class="py-12 text-center text-muted-foreground">
+      No relations yet. Connect characters, places, and groups to see who is allied with whom, who
+      belongs where, and who owes whom.
+    </p>
+  {/if}
 </div>

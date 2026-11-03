@@ -268,6 +268,13 @@
         moveActive(0, -1);
         break;
       case 'Tab':
+        if (
+          (e.shiftKey && activeCell.row === 0 && activeCell.col <= 1) ||
+          (!e.shiftKey &&
+            activeCell.row === rows.length - 1 &&
+            activeCell.col === columns.length - 1)
+        )
+          return;
         e.preventDefault();
         if (
           !e.shiftKey &&
@@ -314,10 +321,16 @@
     focusActiveCell();
   }
 
-  // Keep the cursor in bounds when the filtered row set shrinks.
+  // Keep the cursor in bounds when rows are filtered or columns are hidden.
   $effect(() => {
-    if (activeCell && activeCell.row >= rows.length) {
-      activeCell = rows.length ? { ...activeCell, row: rows.length - 1 } : null;
+    if (activeCell && (activeCell.row >= rows.length || activeCell.col >= columns.length)) {
+      activeCell =
+        rows.length && columns.length
+          ? {
+              row: Math.min(activeCell.row, rows.length - 1),
+              col: Math.min(activeCell.col, columns.length - 1)
+            }
+          : null;
     }
   });
 </script>
@@ -331,8 +344,9 @@
   {#if rows.length === 0}
     <p class="py-12 text-center text-muted-foreground">{emptyMessage}</p>
   {:else}
-    <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
     <table
+      role="grid"
+      aria-label="Entries. Use arrow keys to move, Enter to edit, Escape to cancel."
       class="w-full text-sm min-w-max border-separate border-spacing-0"
       use:stickyColumns
       onkeydown={onGridKeydown}
@@ -391,7 +405,7 @@
               {@const spillCount = hasEditor ? 0 : cells[col].spill}
               <td
                 role="gridcell"
-                tabindex={-1}
+                tabindex={isActive || (!activeCell && row === 0 && col === 1) ? 0 : -1}
                 data-cell="{row}-{col}"
                 class={cn(
                   'group/cell h-9 border-b border-border p-0 align-middle focus:outline-none',
@@ -409,6 +423,9 @@
                     ? 'left: var(--grid-col0, 4rem)'
                     : undefined}
                 onclick={() => (activeCell = { row, col })}
+                onfocus={() => {
+                  if (!isActive) activeCell = { row, col };
+                }}
                 ondblclick={() => beginEdit(toEditString(getCellValue(entity, column.key)))}
               >
                 <div

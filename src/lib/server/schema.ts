@@ -6,6 +6,8 @@ export const users = sqliteTable('users', {
   username: text('username').notNull().unique(),
   passwordHash: text('password_hash').notNull(),
   mustChangePassword: integer('must_change_password', { mode: 'boolean' }).notNull().default(false),
+  isAdmin: integer('is_admin', { mode: 'boolean' }).notNull().default(false),
+  disabled: integer('disabled', { mode: 'boolean' }).notNull().default(false),
   createdAt: text('created_at').notNull()
 });
 
@@ -140,4 +142,37 @@ export const comments = sqliteTable('comments', {
   body: text('body').notNull(),
   createdAt: text('created_at').notNull(),
   resolved: integer('resolved', { mode: 'boolean' }).notNull().default(false)
+});
+
+export const instanceSettings = sqliteTable('instance_settings', {
+  key: text('key').primaryKey(),
+  value: text('value').notNull()
+});
+
+export const projectPins = sqliteTable(
+  'project_pins',
+  {
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => projects.id),
+    createdAt: text('created_at').notNull()
+  },
+  (table) => [primaryKey({ columns: [table.userId, table.projectId] })]
+);
+
+export const projectInvites = sqliteTable('project_invites', {
+  token: text('token').primaryKey(),
+  projectId: text('project_id')
+    .notNull()
+    .references(() => projects.id),
+  role: text('role').notNull(),
+  createdBy: text('created_by')
+    .notNull()
+    .references(() => users.id),
+  createdAt: text('created_at').notNull(),
+  expiresAt: text('expires_at').notNull(),
+  revoked: integer('revoked', { mode: 'boolean' }).notNull().default(false)
 });

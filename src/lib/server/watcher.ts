@@ -6,8 +6,25 @@ import chokidar, { type FSWatcher } from 'chokidar';
 import { readMarkdownFile } from './markdown';
 import { syncEntityToDb, removeEntityFromDbBySlug, pruneMissingEntities } from './entities';
 import type { EntityType } from '$lib/types';
+import db from './db';
+import { projects } from './schema';
+import { eq } from 'drizzle-orm';
+import { drizzle } from 'drizzle-orm/better-sqlite3';
 
 const watchers = new Map<string, FSWatcher>();
+const lastTouched = new Map<string, number>();
+const TOUCH_INTERVAL_MS = 30_000;
+
+export function touchProject(projectId: string, now = Date.now()): boolean {
+  if (now - (lastTouched.get(projectId) ?? 0) < TOUCH_INTERVAL_MS) return false;
+  lastTouched.set(projectId, now);
+  drizzle(db)
+    .update(projects)
+    .set({ modifiedAt: new Date(now).toISOString() })
+    .where(eq(projects.id, projectId))
+    .run();
+  return true;
+}
 
 const ENTITY_PATTERNS: Record<string, EntityType> = {
   characters: 'character',
@@ -25,20 +42,37 @@ export function watchProject(projectId: string, projectPath: string): void {
     ignored: /(^|[/\\])\../,
     persistent: true,
     ignoreInitial: false,
-    depth: 4
+    depth: 5
   });
+  let ready = false;
+  watcher.on('ready', () => (ready = true));
+  const touch = () => {
+    if (!ready) return;
+    try {
+      touchProject(projectId);
+    } catch (cause) {
+      console.error(`Cannot update activity time for ${projectId}`, cause);
+    }
+  };
+
+  const isProjectFile = (filePath: string) =>
+    filePath.endsWith('.md') ||
+    (filePath.endsWith('.json') && path.basename(filePath) !== 'metadata.json');
 
   watcher.on('add', (filePath) => {
+    if (isProjectFile(filePath)) touch();
     if (!filePath.endsWith('.md')) return;
     safelySync(projectId, projectPath, filePath);
   });
 
   watcher.on('change', (filePath) => {
+    if (isProjectFile(filePath)) touch();
     if (!filePath.endsWith('.md')) return;
     safelySync(projectId, projectPath, filePath);
   });
 
   watcher.on('unlink', (filePath) => {
+    if (isProjectFile(filePath)) touch();
     if (!filePath.endsWith('.md')) return;
     const relPath = path.relative(projectPath, filePath);
     const dirName = path.basename(path.dirname(relPath));

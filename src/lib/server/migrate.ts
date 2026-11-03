@@ -117,7 +117,7 @@ export function migrate() {
   };
   db.transaction(() => {
     const version = db.pragma('user_version', { simple: true }) as number;
-    if (version > 2) throw new Error('Database was created by a newer DreamForge version');
+    if (version > 3) throw new Error('Database was created by a newer DreamForge version');
     if (version < 1) {
       addColumn('entities', 'slug', 'TEXT');
       addColumn('trash_items', 'kind', "TEXT NOT NULL DEFAULT 'entity'");
@@ -147,6 +147,39 @@ export function migrate() {
     if (version < 2) {
       addColumn('users', 'must_change_password', 'INTEGER NOT NULL DEFAULT 0');
       db.pragma('user_version = 2');
+    }
+    if (version < 3) {
+      addColumn('users', 'is_admin', 'INTEGER NOT NULL DEFAULT 0');
+      addColumn('users', 'disabled', 'INTEGER NOT NULL DEFAULT 0');
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS instance_settings (
+          key TEXT PRIMARY KEY,
+          value TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS project_pins (
+          user_id TEXT NOT NULL REFERENCES users(id),
+          project_id TEXT NOT NULL REFERENCES projects(id),
+          created_at TEXT NOT NULL,
+          PRIMARY KEY (user_id, project_id)
+        );
+        INSERT OR IGNORE INTO project_pins (user_id, project_id, created_at)
+          SELECT user_id, id, modified_at FROM projects WHERE pinned = 1;
+        CREATE TABLE IF NOT EXISTS project_invites (
+          token TEXT PRIMARY KEY,
+          project_id TEXT NOT NULL REFERENCES projects(id),
+          role TEXT NOT NULL CHECK(role IN ('editor', 'commenter')),
+          created_by TEXT NOT NULL REFERENCES users(id),
+          created_at TEXT NOT NULL,
+          expires_at TEXT NOT NULL,
+          revoked INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE INDEX IF NOT EXISTS invites_project ON project_invites(project_id);
+        UPDATE users SET is_admin = 1 WHERE username = 'admin';
+        UPDATE users SET is_admin = 1
+          WHERE id = (SELECT id FROM users ORDER BY created_at LIMIT 1)
+          AND NOT EXISTS (SELECT 1 FROM users WHERE is_admin = 1);
+      `);
+      db.pragma('user_version = 3');
     }
   })();
 }

@@ -1,5 +1,7 @@
-import { ENTITY_DIRS, listEntities } from './entities';
+import fs from 'node:fs';
+import { ENTITY_DIRS, getEntityDir, listEntities } from './entities';
 import { listStories, listChapters, listScenes } from './stories';
+import { loadRelations } from './relations';
 import { countWords } from '$lib/utils/wordCount';
 import { entityTypeToRoute } from '$lib/utils/entityTypes';
 import type { EntityType, ProjectStats, RecentItem, StoryStats } from '$lib/types';
@@ -127,5 +129,50 @@ export function getProjectStats(projectId: string, projectPath: string): Project
     stories,
     recent: recent.slice(0, RECENT_LIMIT),
     lastScene
+  };
+}
+
+export interface ProjectSummary {
+  entityCount: number;
+  storyCount: number;
+  wordCount: number;
+}
+
+export function getProjectSummary(projectPath: string): ProjectSummary {
+  let entityCount = 0;
+  for (const type of Object.keys(ENTITY_DIRS) as EntityType[]) {
+    const dir = getEntityDir(projectPath, type);
+    if (fs.existsSync(dir))
+      entityCount += fs.readdirSync(dir).filter((f) => f.endsWith('.md')).length;
+  }
+  const { stories } = collectStories(projectPath);
+  return {
+    entityCount,
+    storyCount: stories.length,
+    wordCount: stories.reduce((sum, s) => sum + s.wordCount, 0)
+  };
+}
+
+export interface GettingStarted {
+  character: boolean;
+  scene: boolean;
+  relation: boolean;
+  mention: boolean;
+}
+
+export function getGettingStarted(stats: ProjectStats, projectPath: string): GettingStarted {
+  let mention = false;
+  outer: for (const story of listStories(projectPath))
+    for (const chapter of listChapters(projectPath, story.id))
+      for (const scene of listScenes(projectPath, story.id, chapter.id))
+        if (scene.body.includes('](mention://')) {
+          mention = true;
+          break outer;
+        }
+  return {
+    character: (stats.entityCounts.character ?? 0) > 0,
+    scene: stats.wordCount > 0,
+    relation: loadRelations(projectPath).length > 0,
+    mention
   };
 }

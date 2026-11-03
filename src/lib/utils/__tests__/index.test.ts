@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { cn, generateId, slugify, formatDate, isSafePathSegment } from '../index';
+import {
+  cn,
+  generateId,
+  slugify,
+  formatDate,
+  isSafePathSegment,
+  moveItem,
+  safeNext
+} from '../index';
 
 describe('cn', () => {
   it('merges class names', () => {
@@ -97,5 +105,31 @@ describe('isSafePathSegment', () => {
     expect(isSafePathSegment(null)).toBe(false);
     expect(isSafePathSegment(undefined)).toBe(false);
     expect(isSafePathSegment(42)).toBe(false);
+  });
+});
+
+describe('moveItem', () => {
+  it('moves an item up or down by one', () => {
+    expect(moveItem(['a', 'b', 'c'], 'b', -1)).toEqual(['b', 'a', 'c']);
+    expect(moveItem(['a', 'b', 'c'], 'b', 1)).toEqual(['a', 'c', 'b']);
+  });
+
+  it('returns null at the edges or for unknown items', () => {
+    expect(moveItem(['a', 'b'], 'a', -1)).toBeNull();
+    expect(moveItem(['a', 'b'], 'b', 1)).toBeNull();
+    expect(moveItem(['a', 'b'], 'z', 1)).toBeNull();
+  });
+});
+
+describe('safeNext', () => {
+  it('allows same-site paths only', () => {
+    expect(safeNext('/invite/abc')).toBe('/invite/abc');
+    expect(safeNext('//evil.example')).toBe('/projects');
+    expect(safeNext('/\t/evil.example')).toBe('/projects');
+    expect(safeNext('/\n/evil.example')).toBe('/projects');
+    expect(safeNext('/x\u007f')).toBe('/projects');
+    expect(safeNext('https://evil.example')).toBe('/projects');
+    expect(safeNext('/\\evil.example')).toBe('/projects');
+    expect(safeNext(null)).toBe('/projects');
   });
 });

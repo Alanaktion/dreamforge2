@@ -63,8 +63,15 @@ export const handle: Handle = async ({ event, resolve }) => {
     if (session && session.expiresAt > Math.floor(Date.now() / 1000)) {
       const user = drizzleDb.select().from(users).where(eq(users.id, session.userId)).get();
 
-      event.locals.user = user || null;
-      event.locals.session = session;
+      if (user && !user.disabled) {
+        event.locals.user = user;
+        event.locals.session = session;
+      } else {
+        drizzleDb.delete(sessions).where(eq(sessions.id, sessionId)).run();
+        event.cookies.delete('dreamforge-session', { path: '/' });
+        event.locals.user = null;
+        event.locals.session = null;
+      }
     } else {
       if (session) {
         drizzleDb.delete(sessions).where(eq(sessions.id, sessionId)).run();

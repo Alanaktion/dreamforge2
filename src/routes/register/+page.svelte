@@ -1,6 +1,7 @@
 <script lang="ts">
   import { enhance } from '$app/forms';
   import { goto } from '$app/navigation';
+  import { page } from '$app/state';
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
   import { Label } from '$lib/components/ui/label';
@@ -67,6 +68,7 @@
       </div>
 
       <Button type="submit" class="w-full">Register</Button>
+      {#if page.data?.invite}<input type="hidden" name="invite" value={page.data.invite} />{/if}
     </form>
 
     <p class="text-center text-sm text-muted-foreground">

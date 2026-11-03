@@ -54,10 +54,19 @@
         <Input id="password" name="password" type="password" required bind:value={password} />
       </div>
 
+      <input type="hidden" name="next" value={page.url.searchParams.get('next') ?? ''} />
       <Button type="submit" class="w-full">Log In</Button>
     </form>
 
-    {#if page.data?.allowRegistration}
+    {#if page.url.searchParams.get('invite')}
+      <p class="text-center text-sm text-muted-foreground">
+        New here?
+        <a
+          href="/register?invite={encodeURIComponent(page.url.searchParams.get('invite') ?? '')}"
+          class="text-primary hover:underline">Create an account to join</a
+        >
+      </p>
+    {:else if page.data?.allowRegistration}
       <p class="text-center text-sm text-muted-foreground">
         Don't have an account?
         <a href="/register" class="text-primary hover:underline">Register</a>

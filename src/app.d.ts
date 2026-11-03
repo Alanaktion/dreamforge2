@@ -6,6 +6,8 @@ declare global {
       username: string;
       passwordHash: string;
       mustChangePassword?: boolean;
+      isAdmin?: boolean;
+      disabled?: boolean;
       createdAt: string;
     }
     interface Session {
