@@ -1,27 +1,60 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { Editor } from '@tiptap/core';
+  import { Editor, type Range } from '@tiptap/core';
   import StarterKit from '@tiptap/starter-kit';
   import Link from '@tiptap/extension-link';
   import Placeholder from '@tiptap/extension-placeholder';
   import ImageExt from '@tiptap/extension-image';
+  import BubbleMenu from '@tiptap/extension-bubble-menu';
   import { Table, TableRow, TableCell, TableHeader } from '@tiptap/extension-table';
   import { Markdown } from '@tiptap/markdown';
   import { HighlightMarkdown } from './highlight';
   import { MentionWithMarkdown } from './mentionMarkdown';
-
-  import { Maximize2, Minimize2, SpellCheck } from '@lucide/svelte';
-  import { getZenMode } from '$lib/stores/zenMode.svelte';
-
-  const zen = getZenMode();
+  import { SlashCommands } from './slashCommands';
+  import {
+    TOOLS,
+    PINNED_STORAGE_KEY,
+    parsePinned,
+    togglePinned,
+    toolTitle,
+    formatKeys,
+    type ToolId
+  } from './editorTools';
+  import * as Popover from '$lib/components/ui/popover';
+  import { cn } from '$lib/utils';
+  import {
+    Bold,
+    Italic,
+    Strikethrough,
+    Highlighter,
+    Heading1,
+    Heading2,
+    Heading3,
+    List,
+    ListOrdered,
+    Quote,
+    SquareCode,
+    Minus,
+    Link as LinkIcon,
+    Image as ImageIcon,
+    Table as TableIcon,
+    Ellipsis,
+    SpellCheck,
+    BetweenHorizontalStart,
+    BetweenHorizontalEnd,
+    BetweenVerticalStart,
+    BetweenVerticalEnd,
+    Trash2
+  } from '@lucide/svelte';
 
   let {
     content = '',
-    placeholder = 'Start writing...',
+    placeholder = 'Start writing... Type / for blocks, @ to mention.',
     entities = [],
     images = [],
     projectId = '',
-    onUpdate
+    onUpdate,
+    class: className = ''
   }: {
     content?: string;
     placeholder?: string;
@@ -29,9 +62,50 @@
     images?: { id: string; filename: string; originalName: string; altText?: string | null }[];
     projectId?: string;
     onUpdate?: (md: string) => void;
+    class?: string;
   } = $props();
 
+  const ICONS: Record<ToolId, typeof Bold> = {
+    bold: Bold,
+    italic: Italic,
+    strike: Strikethrough,
+    highlight: Highlighter,
+    h1: Heading1,
+    h2: Heading2,
+    h3: Heading3,
+    bullet: List,
+    ordered: ListOrdered,
+    blockquote: Quote,
+    codeBlock: SquareCode,
+    divider: Minus,
+    link: LinkIcon,
+    image: ImageIcon,
+    table: TableIcon
+  };
+
+  const LANGUAGES = [
+    ['en', 'English'],
+    ['de', 'Deutsch'],
+    ['es', 'español'],
+    ['fr', 'français'],
+    ['it', 'italiano'],
+    ['ja', '日本語'],
+    ['ko', '한국어'],
+    ['ms', 'Bahasa Melayu'],
+    ['nl', 'Nederlands'],
+    ['pt', 'Português'],
+    ['ru', 'Русский язык'],
+    ['zh', '中文']
+  ];
+
+  const mac = typeof navigator !== 'undefined' && /Mac|iP(hone|ad)/.test(navigator.platform);
+
   let showImagePicker = $state(false);
+  let overflowOpen = $state(false);
+  let pinned = $state<ToolId[]>(parsePinned(localStorage.getItem(PINNED_STORAGE_KEY)));
+  let pinnedTools = $derived(TOOLS.filter((t) => pinned.includes(t.id)));
+  let overflowTools = $derived(TOOLS.filter((t) => !pinned.includes(t.id)));
+  let revision = $state(0);
 
   function imageSrc(filename: string): string {
     return `/api/projects/${projectId}/images/${filename}`;
@@ -43,6 +117,8 @@
   }
 
   let editorEl: HTMLDivElement;
+  let textBubbleEl: HTMLDivElement;
+  let tableBubbleEl: HTMLDivElement;
   let editor: Editor;
   let mounted = $state(false);
 
@@ -64,6 +140,34 @@
   function setLang(lang: string) {
     editorLang = lang;
     localStorage.setItem('editor:lang', lang);
+  }
+
+  function togglePin(id: ToolId) {
+    pinned = togglePinned(pinned, id);
+    localStorage.setItem(PINNED_STORAGE_KEY, JSON.stringify(pinned));
+  }
+
+  function isActive(id: ToolId): boolean {
+    void revision;
+    if (!editor) return false;
+    switch (id) {
+      case 'h1':
+        return editor.isActive('heading', { level: 1 });
+      case 'h2':
+        return editor.isActive('heading', { level: 2 });
+      case 'h3':
+        return editor.isActive('heading', { level: 3 });
+      case 'bullet':
+        return editor.isActive('bulletList');
+      case 'ordered':
+        return editor.isActive('orderedList');
+      case 'divider':
+      case 'image':
+      case 'table':
+        return false;
+      default:
+        return editor.isActive(id);
+    }
   }
 
   function setupMentionHover() {
@@ -132,6 +236,67 @@
     dom.style.zIndex = '100';
   }
 
+  function runTool(id: ToolId, range?: Range) {
+    const chain = editor.chain().focus();
+    if (range) chain.deleteRange(range);
+    switch (id) {
+      case 'bold':
+        chain.toggleBold().run();
+        break;
+      case 'italic':
+        chain.toggleItalic().run();
+        break;
+      case 'strike':
+        chain.toggleStrike().run();
+        break;
+      case 'highlight':
+        chain.toggleHighlight().run();
+        break;
+      case 'h1':
+        chain.toggleHeading({ level: 1 }).run();
+        break;
+      case 'h2':
+        chain.toggleHeading({ level: 2 }).run();
+        break;
+      case 'h3':
+        chain.toggleHeading({ level: 3 }).run();
+        break;
+      case 'bullet':
+        chain.toggleBulletList().run();
+        break;
+      case 'ordered':
+        chain.toggleOrderedList().run();
+        break;
+      case 'blockquote':
+        chain.toggleBlockquote().run();
+        break;
+      case 'codeBlock':
+        chain.toggleCodeBlock().run();
+        break;
+      case 'divider':
+        chain.setHorizontalRule().run();
+        break;
+      case 'table':
+        chain.insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run();
+        break;
+      case 'link':
+        chain.run();
+        setLink();
+        break;
+      case 'image': {
+        chain.run();
+        if (projectId && images.length > 0) {
+          showImagePicker = !showImagePicker;
+          break;
+        }
+        const url = prompt('Enter image URL:');
+        if (url) insertImage(url);
+        break;
+      }
+    }
+    overflowOpen = false;
+  }
+
   onMount(() => {
     const mentionExt = MentionWithMarkdown.configure({
       HTMLAttributes: { class: 'mention-node' },
@@ -168,7 +333,8 @@
       element: editorEl,
       extensions: [
         StarterKit.configure({
-          heading: { levels: [1, 2, 3, 4, 5, 6] }
+          heading: { levels: [1, 2, 3, 4, 5, 6] },
+          link: false
         }),
         Link.configure({ openOnClick: false }),
         Placeholder.configure({ placeholder }),
@@ -181,12 +347,30 @@
         Markdown.configure({
           indentation: { style: 'space', size: 2 }
         }),
-        mentionExt
+        mentionExt,
+        SlashCommands.configure({ run: (_editor, range, item) => runTool(item.id, range) }),
+        BubbleMenu.configure({
+          pluginKey: 'textBubble',
+          element: textBubbleEl,
+          appendTo: () => document.body,
+          shouldShow: ({ editor: ed, from, to }) =>
+            from !== to && !ed.isActive('codeBlock') && !ed.isActive('image')
+        }),
+        BubbleMenu.configure({
+          pluginKey: 'tableBubble',
+          element: tableBubbleEl,
+          appendTo: () => document.body,
+          options: { placement: 'top-start' },
+          shouldShow: ({ editor: ed, from, to }) => from === to && ed.isActive('table')
+        })
       ],
       content,
       contentType: 'markdown',
       onUpdate: ({ editor: ed }) => {
         onUpdate?.(ed.getMarkdown());
+      },
+      onTransaction: () => {
+        revision++;
       }
     });
 
@@ -198,79 +382,15 @@
     };
   });
 
-  function exec(command: string) {
-    switch (command) {
-      case 'bold':
-        editor.chain().focus().toggleBold().run();
-        break;
-      case 'italic':
-        editor.chain().focus().toggleItalic().run();
-        break;
-      case 'strike':
-        editor.chain().focus().toggleStrike().run();
-        break;
-      case 'h1':
-        editor.chain().focus().toggleHeading({ level: 1 }).run();
-        break;
-      case 'h2':
-        editor.chain().focus().toggleHeading({ level: 2 }).run();
-        break;
-      case 'h3':
-        editor.chain().focus().toggleHeading({ level: 3 }).run();
-        break;
-      case 'bullet':
-        editor.chain().focus().toggleBulletList().run();
-        break;
-      case 'ordered':
-        editor.chain().focus().toggleOrderedList().run();
-        break;
-      case 'blockquote':
-        editor.chain().focus().toggleBlockquote().run();
-        break;
-      case 'code':
-        editor.chain().focus().toggleCodeBlock().run();
-        break;
-      case 'link': {
-        const url = prompt('Enter URL:');
-        if (url) editor.chain().focus().setLink({ href: url }).run();
-        break;
-      }
-      case 'table':
-        editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run();
-        break;
-      case 'image': {
-        // With a project image library, picking from it beats typing a URL; the
-        // prompt stays as the fallback for external images.
-        if (projectId && images.length > 0) {
-          showImagePicker = !showImagePicker;
-          break;
-        }
-        const url = prompt('Enter image URL:');
-        if (url) insertImage(url);
-        break;
-      }
-      case 'highlight':
-        editor.chain().focus().toggleHighlight().run();
-        break;
-      case 'tableRowBefore':
-        editor.chain().focus().addRowBefore().run();
-        break;
-      case 'tableRowAfter':
-        editor.chain().focus().addRowAfter().run();
-        break;
-      case 'tableRowDelete':
-        editor.chain().focus().deleteRow().run();
-        break;
-      case 'tableColBefore':
-        editor.chain().focus().addColumnBefore().run();
-        break;
-      case 'tableColAfter':
-        editor.chain().focus().addColumnAfter().run();
-        break;
-      case 'tableColDelete':
-        editor.chain().focus().deleteColumn().run();
-        break;
-    }
+  function tableCommand(command: string) {
+    const chain = editor.chain().focus();
+    if (command === 'rowBefore') chain.addRowBefore().run();
+    if (command === 'rowAfter') chain.addRowAfter().run();
+    if (command === 'rowDelete') chain.deleteRow().run();
+    if (command === 'colBefore') chain.addColumnBefore().run();
+    if (command === 'colAfter') chain.addColumnAfter().run();
+    if (command === 'colDelete') chain.deleteColumn().run();
+    if (command === 'tableDelete') chain.deleteTable().run();
   }
 
   function setLink() {
@@ -286,132 +406,148 @@
   }
 </script>
 
-<div class="editor-wrapper rounded-lg border border-border bg-background">
+{#snippet toolButton(id: ToolId, compact = false)}
+  {@const tool = TOOLS.find((t) => t.id === id)!}
+  {@const Icon = ICONS[id]}
+  <button
+    type="button"
+    class="editor-tool"
+    class:is-active={isActive(id)}
+    aria-pressed={['divider', 'image', 'table', 'link'].includes(id) ? undefined : isActive(id)}
+    aria-label={tool.label}
+    title={toolTitle(tool, mac)}
+    onmousedown={(e) => e.preventDefault()}
+    onclick={() => runTool(id)}
+  >
+    <Icon class="h-4 w-4" />
+    {#if !compact}<span class="sr-only">{tool.label}</span>{/if}
+  </button>
+{/snippet}
+
+<div
+  class={cn(
+    'editor-wrapper flex min-h-0 flex-col rounded-lg border border-border bg-background',
+    className
+  )}
+>
   {#if mounted}
-    <div class="flex flex-wrap gap-0.5 border-b border-border bg-muted/50 px-2 py-1.5">
+    <div
+      role="toolbar"
+      aria-label="Formatting"
+      class="flex items-center gap-0.5 overflow-x-auto border-b border-border bg-muted/50 px-1.5 py-1"
+    >
+      {#each pinnedTools as tool (tool.id)}
+        {@render toolButton(tool.id)}
+      {/each}
+      <span class="flex-1"></span>
       <button
-        class="rounded px-2 py-1 text-xs hover:bg-secondary"
-        onclick={() => exec('bold')}
-        title="Bold"><strong>B</strong></button
-      >
-      <button
-        class="rounded px-2 py-1 text-xs hover:bg-secondary"
-        onclick={() => exec('italic')}
-        title="Italic"><em>I</em></button
-      >
-      <button
-        class="rounded px-2 py-1 text-xs hover:bg-secondary"
-        onclick={() => exec('strike')}
-        title="Strike"><s>S</s></button
-      >
-      <span class="mx-1 border-l border-border"></span>
-      <button class="rounded px-2 py-1 text-xs hover:bg-secondary" onclick={() => exec('h1')}
-        >H1</button
-      >
-      <button class="rounded px-2 py-1 text-xs hover:bg-secondary" onclick={() => exec('h2')}
-        >H2</button
-      >
-      <button class="rounded px-2 py-1 text-xs hover:bg-secondary" onclick={() => exec('h3')}
-        >H3</button
-      >
-      <span class="mx-1 border-l border-border"></span>
-      <button class="rounded px-2 py-1 text-xs hover:bg-secondary" onclick={() => exec('bullet')}
-        >&#8226; List</button
-      >
-      <button class="rounded px-2 py-1 text-xs hover:bg-secondary" onclick={() => exec('ordered')}
-        >1. List</button
-      >
-      <button
-        class="rounded px-2 py-1 text-xs hover:bg-secondary"
-        onclick={() => exec('blockquote')}>&#8220;</button
-      >
-      <button class="rounded px-2 py-1 text-xs hover:bg-secondary" onclick={() => exec('code')}
-        >&lt;/&gt;</button
-      >
-      <span class="mx-1 border-l border-border"></span>
-      <button class="rounded px-2 py-1 text-xs hover:bg-secondary" onclick={setLink}>Link</button>
-      <button class="rounded px-2 py-1 text-xs hover:bg-secondary" onclick={() => exec('table')}
-        >Table</button
-      >
-      <button class="rounded px-2 py-1 text-xs hover:bg-secondary" onclick={() => exec('image')}
-        >Image</button
-      >
-      <button class="rounded px-2 py-1 text-xs hover:bg-secondary" onclick={() => exec('highlight')}
-        >HL</button
-      >
-      <span class="mx-1 border-l border-border"></span>
-      <button
-        class="rounded px-2 py-1 text-xs hover:bg-secondary"
-        onclick={() => exec('tableRowBefore')}
-        title="Insert row before">&#8593; Row</button
-      >
-      <button
-        class="rounded px-2 py-1 text-xs hover:bg-secondary"
-        onclick={() => exec('tableRowAfter')}
-        title="Insert row after">&#8595; Row</button
-      >
-      <button
-        class="rounded px-2 py-1 text-xs hover:bg-secondary"
-        onclick={() => exec('tableRowDelete')}
-        title="Delete row">&times; Row</button
-      >
-      <button
-        class="rounded px-2 py-1 text-xs hover:bg-secondary"
-        onclick={() => exec('tableColBefore')}
-        title="Insert column before">&#8592; Col</button
-      >
-      <button
-        class="rounded px-2 py-1 text-xs hover:bg-secondary"
-        onclick={() => exec('tableColAfter')}
-        title="Insert column after">&#8594; Col</button
-      >
-      <button
-        class="rounded px-2 py-1 text-xs hover:bg-secondary"
-        onclick={() => exec('tableColDelete')}
-        title="Delete column">&times; Col</button
-      >
-      <span class="mx-1 border-l border-border"></span>
-      <button
-        class="rounded px-2 py-1 hover:bg-secondary"
-        onclick={() => zen.toggle()}
-        title={zen.active ? 'Exit Zen Mode' : 'Zen Mode'}
-      >
-        {#if zen.active}
-          <Minimize2 class="h-3.5 w-3.5" />
-        {:else}
-          <Maximize2 class="h-3.5 w-3.5" />
-        {/if}
-      </button>
-      <span class="mx-1 border-l border-border"></span>
-      <button
-        class="rounded px-2 py-1 hover:bg-secondary"
+        type="button"
+        class="editor-tool"
         class:opacity-40={!spellcheckEnabled}
-        onclick={toggleSpellcheck}
+        aria-pressed={spellcheckEnabled}
+        aria-label="Spellcheck"
         title={spellcheckEnabled ? 'Spellcheck on' : 'Spellcheck off'}
+        onclick={toggleSpellcheck}
       >
-        <SpellCheck class="h-3.5 w-3.5" />
+        <SpellCheck class="h-4 w-4" />
       </button>
-      <select
-        class="rounded border-0 bg-transparent px-1 py-1 text-xs hover:bg-secondary"
-        value={editorLang}
-        onchange={(e) => setLang((e.target as HTMLSelectElement).value)}
-        title="Editor language"
-      >
-        <option value="en">English</option>
-        <option value="de">Deutsch</option>
-        <option value="es">español</option>
-        <option value="fr">français</option>
-        <option value="it">italiano</option>
-        <option value="ja">日本語</option>
-        <option value="ko">한국어</option>
-        <option value="ms">بهاس ملايو</option>
-        <option value="nl">Nederlands</option>
-        <option value="pt">Português</option>
-        <option value="ru">Русский язык</option>
-        <option value="zh">中文</option>
-      </select>
+      <Popover.Root bind:open={overflowOpen}>
+        <Popover.Trigger class="editor-tool" aria-label="More tools" title="More tools">
+          <Ellipsis class="h-4 w-4" />
+        </Popover.Trigger>
+        <Popover.Content align="end" class="w-64 space-y-3 p-3">
+          {#if overflowTools.length > 0}
+            <div>
+              <p class="mb-1 text-xs font-medium text-muted-foreground">More tools</p>
+              <div class="grid grid-cols-1">
+                {#each overflowTools as tool (tool.id)}
+                  {@const Icon = ICONS[tool.id]}
+                  <button
+                    type="button"
+                    class="flex items-center gap-2 rounded px-2 py-1 text-left text-sm hover:bg-secondary"
+                    onclick={() => runTool(tool.id)}
+                  >
+                    <Icon class="h-4 w-4" />
+                    <span>{tool.label}</span>
+                    {#if tool.keys}<span class="ml-auto text-xs text-muted-foreground"
+                        >{formatKeys(tool.keys, mac)}</span
+                      >{/if}
+                  </button>
+                {/each}
+              </div>
+            </div>
+          {/if}
+          <label class="flex items-center justify-between gap-2 text-sm">
+            <span>Spellcheck language</span>
+            <select
+              class="rounded border border-border bg-background px-1 py-0.5 text-xs"
+              value={editorLang}
+              onchange={(e) => setLang((e.target as HTMLSelectElement).value)}
+            >
+              {#each LANGUAGES as [code, name] (code)}
+                <option value={code}>{name}</option>
+              {/each}
+            </select>
+          </label>
+          <details>
+            <summary class="cursor-pointer text-xs font-medium text-muted-foreground"
+              >Customize toolbar</summary
+            >
+            <fieldset class="mt-2 grid grid-cols-2 gap-1">
+              <legend class="sr-only">Pinned tools</legend>
+              {#each TOOLS as tool (tool.id)}
+                <label class="flex items-center gap-1.5 text-xs">
+                  <input
+                    type="checkbox"
+                    checked={pinned.includes(tool.id)}
+                    onchange={() => togglePin(tool.id)}
+                  />
+                  {tool.label}
+                </label>
+              {/each}
+            </fieldset>
+          </details>
+        </Popover.Content>
+      </Popover.Root>
     </div>
   {/if}
+
+  <div
+    bind:this={textBubbleEl}
+    class="editor-bubble"
+    style="visibility: hidden; position: absolute"
+    role="toolbar"
+    aria-label="Text formatting"
+  >
+    {#each ['bold', 'italic', 'strike', 'highlight', 'link'] as const as id (id)}
+      {@render toolButton(id, true)}
+    {/each}
+  </div>
+
+  <div
+    bind:this={tableBubbleEl}
+    class="editor-bubble"
+    style="visibility: hidden; position: absolute"
+    role="toolbar"
+    aria-label="Table"
+  >
+    {#each [['rowBefore', 'Insert row above', BetweenHorizontalStart], ['rowAfter', 'Insert row below', BetweenHorizontalEnd], ['colBefore', 'Insert column left', BetweenVerticalStart], ['colAfter', 'Insert column right', BetweenVerticalEnd], ['rowDelete', 'Delete row', Trash2], ['colDelete', 'Delete column', Trash2], ['tableDelete', 'Delete table', Trash2]] as const as [command, label, Icon] (command)}
+      <button
+        type="button"
+        class="editor-tool"
+        aria-label={label}
+        title={label}
+        onmousedown={(e) => e.preventDefault()}
+        onclick={() => tableCommand(command)}
+      >
+        <Icon class="h-4 w-4" />
+        {#if command !== 'rowBefore' && command !== 'rowAfter' && command !== 'colBefore' && command !== 'colAfter'}<span
+            class="text-[10px]">{label.replace('Delete ', '')}</span
+          >{/if}
+      </button>
+    {/each}
+  </div>
+
   {#if showImagePicker}
     <div class="border-b border-border bg-card p-3">
       <div class="mb-2 flex items-center justify-between">
@@ -455,9 +591,10 @@
 
   <div
     bind:this={editorEl}
+    data-editor-body
     spellcheck={spellcheckEnabled}
     lang={editorLang}
-    class="prose prose-sm dark:prose-invert max-w-none px-4 py-3 min-h-[200px] focus:outline-none [&_.ProseMirror]:outline-none [&_.ProseMirror_p]:leading-relaxed [&_.ProseMirror_p.is-editor-empty:first-child]:before:text-muted-foreground [&_.ProseMirror_p.is-editor-empty:first-child]:before:content-[attr(data-placeholder)] [&_.ProseMirror_p.is-editor-empty:first-child]:before:pointer-events-none [&_.ProseMirror_p.is-editor-empty:first-child]:before:float-left [&_.ProseMirror_p.is-editor-empty:first-child]:before:h-0 [&_.ProseMirror_p]:my-1"
+    class="prose prose-sm dark:prose-invert max-w-none min-h-0 flex-1 overflow-y-auto px-4 py-3 min-h-[200px] focus:outline-none [&_.ProseMirror]:outline-none [&_.ProseMirror_p]:leading-relaxed [&_.ProseMirror_p.is-editor-empty:first-child]:before:text-muted-foreground [&_.ProseMirror_p.is-editor-empty:first-child]:before:content-[attr(data-placeholder)] [&_.ProseMirror_p.is-editor-empty:first-child]:before:pointer-events-none [&_.ProseMirror_p.is-editor-empty:first-child]:before:float-left [&_.ProseMirror_p.is-editor-empty:first-child]:before:h-0 [&_.ProseMirror_p]:my-1"
   ></div>
 </div>
 
@@ -540,5 +677,49 @@
     border: 1px solid var(--border);
     background: var(--popover);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  }
+  .editor-wrapper :global(.editor-tool) {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 0.25rem;
+    border-radius: 0.25rem;
+    padding: 0.375rem;
+    color: var(--muted-foreground);
+  }
+  .editor-wrapper :global(.editor-tool:hover) {
+    background: var(--secondary);
+    color: var(--foreground);
+  }
+  .editor-wrapper :global(.editor-tool:focus-visible) {
+    outline: 2px solid var(--ring);
+    outline-offset: 1px;
+  }
+  .editor-wrapper :global(.editor-tool.is-active) {
+    background: var(--secondary);
+    color: var(--foreground);
+  }
+  .editor-bubble {
+    z-index: 50;
+    display: flex;
+    gap: 0.125rem;
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    background: var(--popover);
+    padding: 0.125rem;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  }
+  .editor-bubble :global(.editor-tool) {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    border-radius: 0.25rem;
+    padding: 0.375rem;
+    color: var(--muted-foreground);
+  }
+  .editor-bubble :global(.editor-tool:hover),
+  .editor-bubble :global(.editor-tool.is-active) {
+    background: var(--secondary);
+    color: var(--foreground);
   }
 </style>
