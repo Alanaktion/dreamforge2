@@ -16,13 +16,16 @@ export interface SearchResult {
   snippet: string | null;
 }
 
+/** The API refuses longer queries; a pasted or shared URL is cut to fit instead. */
+export const _MAX_QUERY = 200;
+
 export const load: PageLoad = async ({ fetch, params, parent, url }) => {
   const { user } = await parent();
   if (!user) redirect(302, '/login');
   const query = new URLSearchParams();
   for (const key of ['q', 'kind', 'type']) {
     const value = url.searchParams.get(key);
-    if (value) query.set(key, value);
+    if (value) query.set(key, key === 'q' ? value.slice(0, _MAX_QUERY) : value);
   }
   return await get<{
     query: string;

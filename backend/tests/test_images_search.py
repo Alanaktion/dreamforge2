@@ -141,6 +141,24 @@ def test_commenter_sees_images_but_cannot_change_them(admin):
     assert reader.delete(url).status_code == 403
 
 
+def test_upload_access_is_checked_before_the_body_is_read(admin):
+    project_id = create(admin)
+    reader = commenter(admin, project_id)
+
+    def oversized():  # no Content-Length, so only reading the body would refuse it (413)
+        for _ in range(21):
+            yield b"\0" * (1024 * 1024)
+
+    res = reader.post(
+        images_url(project_id),
+        params={"name": "big.png"},
+        content=oversized(),
+        headers={"content-type": "application/octet-stream"},
+    )
+    assert res.status_code == 403
+    assert upload(admin, project_id).status_code == 201  # the editor path still works
+
+
 def test_image_endpoints_need_project_access(admin, client):
     from conftest import add_user
 

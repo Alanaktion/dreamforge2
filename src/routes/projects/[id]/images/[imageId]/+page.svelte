@@ -27,6 +27,7 @@
   let readOnly = $derived(page.data?.role === 'commenter');
 
   $effect.pre(() => {
+    if (editing) return; // keep unsaved edits across reloads (a failed save, a link change)
     caption = image?.caption || '';
     altText = image?.altText || '';
   });

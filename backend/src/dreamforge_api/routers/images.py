@@ -16,7 +16,17 @@ from .entities import _access, _editor, _index
 router = APIRouter(prefix="/projects/{project_id}/images", tags=["images"])
 
 
-async def _upload_body(request: Request) -> bytes:
+def _upload_access(project_id: str, auth: CurrentAuth, db: Db) -> None:
+    """Refuses non-editors before the body is read, then ends the transaction: auth opened
+    a write (IMMEDIATE) transaction, which must not stay open while a slow client uploads.
+    The endpoint checks access again after the upload."""
+    _editor(db, project_id, auth)
+    db.rollback()
+
+
+async def _upload_body(
+    request: Request, _access_checked: Annotated[None, Depends(_upload_access)]
+) -> bytes:
     """The raw request body, refused past the image size limit even without a
     Content-Length (the app middleware only checks the declared length)."""
     chunks, size = [], 0
