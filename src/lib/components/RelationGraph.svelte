@@ -26,7 +26,7 @@
     relations: {
       sourceId: string;
       targetId: string;
-      label?: string;
+      label?: string | null;
       relationType: string;
       id: string;
     }[];

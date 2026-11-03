@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type BrowserContext, type Page } from '@playwright/test';
 
 const password = 'Smoke-updated-password';
 async function showChapters(page: Page) {
@@ -7,7 +7,17 @@ async function showChapters(page: Page) {
     await page.getByRole('button', { name: 'Back to chapters' }).click();
 }
 
+// The login throttle counts every attempt (10 per 15 minutes per address), so tests reuse the
+// first session they get instead of each logging in again. Tests run in one worker, in order.
+let savedCookies: Awaited<ReturnType<BrowserContext['cookies']>> = [];
+
 async function signIn(page: Page) {
+  if (savedCookies.length) {
+    await page.context().addCookies(savedCookies);
+    await page.goto('/projects');
+    if (new URL(page.url()).pathname === '/projects') return;
+    await page.context().clearCookies(); // the session ended (signed out); log in again
+  }
   // The first test changes the initial password. Try the changed one first, so later tests
   // don't each spend a failed attempt against the login throttle.
   await page.goto('/login');
@@ -30,6 +40,7 @@ async function signIn(page: Page) {
     await page.getByRole('button', { name: 'Save account' }).click();
     await expect(page.getByText('Account saved.')).toBeVisible();
   }
+  savedCookies = await page.context().cookies();
 }
 
 test('entities: awkward names, autosave, relations, bookmarks, comments, undo delete', async ({
@@ -289,6 +300,95 @@ test('dashboard, writing goal, plotlines and the timeline', async ({ page }, tes
   await expect(page.getByRole('button', { name: 'The longest winter', exact: true })).toHaveCount(
     0
   );
+
+  expect(errors).toEqual([]);
+});
+
+test('images, entity image links, search and the relations page', async ({ page }, testInfo) => {
+  const errors: string[] = [];
+  page.on('pageerror', (cause) => errors.push(cause.message));
+  page.on('dialog', (dialog) => dialog.accept());
+  await signIn(page);
+  await page.goto('/projects');
+  await page.getByRole('button', { name: 'New Project', exact: true }).first().click();
+  await page.getByLabel('Project Name').fill(`Images ${testInfo.project.name}`);
+  await page.getByRole('button', { name: 'Create', exact: true }).click();
+  await expect(page).toHaveURL(/\/projects\/[^/]+$/);
+  const project = new URL(page.url()).pathname;
+
+  for (const [type, name] of [
+    ['characters', 'Mapmaker'],
+    ['organizations', 'Cartographers Guild']
+  ]) {
+    await page.goto(`${project}/${type}`);
+    const quick = page.getByRole('textbox', { name: /^Quick add/ });
+    await quick.fill(name);
+    await quick.press('Enter');
+    await expect(page.getByText(`Added ${name}`)).toBeVisible();
+  }
+
+  // Upload, caption, and a link to an entry from the image page.
+  const png = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=',
+    'base64'
+  );
+  await page.goto(`${project}/images`);
+  await page
+    .getByLabel('Select images')
+    .setInputFiles({ name: 'world-map.png', mimeType: 'image/png', buffer: png });
+  await page.getByRole('button', { name: 'Upload 1 file' }).click();
+  await page.getByRole('link', { name: /world-map\.png/ }).click();
+  await expect(page.getByRole('heading', { name: 'world-map.png' })).toBeVisible();
+  await expect(page.getByRole('img', { name: 'world-map.png' })).toHaveJSProperty(
+    'naturalWidth',
+    1
+  );
+  await page.getByRole('button', { name: 'Edit Details' }).click();
+  await page.getByLabel('Caption').fill('The known world');
+  await page.getByRole('button', { name: 'Save' }).click();
+  await expect(page.getByLabel('Caption')).toBeDisabled();
+  await page.reload();
+  await expect(page.getByLabel('Caption')).toHaveValue('The known world');
+  await page.getByRole('button', { name: 'Link', exact: true }).click();
+  await page.getByRole('combobox').filter({ hasText: 'Select entity' }).click();
+  await page.getByRole('option', { name: 'Character: Mapmaker' }).click();
+  await page.getByRole('button', { name: 'Add', exact: true }).click();
+  await page.getByRole('link', { name: /Mapmaker/ }).click();
+  await expect(page).toHaveURL(/\/characters\/[^/]+$/);
+  await expect(page.getByRole('img', { name: 'world-map.png' })).toBeVisible();
+  await page.getByRole('button', { name: 'Unlink image world-map.png' }).click();
+  await expect(page.getByText('No images linked to this entry.')).toBeVisible();
+
+  // Search finds the entry by name; the type filter narrows it away.
+  await page.goto(`${project}/search?q=mapmak`);
+  await expect(page.getByRole('link', { name: /Mapmaker/ })).toBeVisible();
+  await page.goto(`${project}/search?q=mapmak&type=organizations`);
+  await expect(page.getByText(/No results for/)).toBeVisible();
+
+  // The relations page adds and removes a relation.
+  await page.goto(`${project}/relations`);
+  await page.getByRole('button', { name: 'Add Relation' }).click();
+  await page.getByRole('combobox').filter({ hasText: 'Select...' }).first().click();
+  await page.getByRole('option', { name: /Mapmaker/ }).click();
+  await page.getByRole('combobox').filter({ hasText: 'Select...' }).first().click();
+  await page
+    .getByRole('option', { name: /Cartographers Guild/ })
+    .last()
+    .click();
+  await page.getByLabel('Label (optional)').fill('draws maps for');
+  await page.getByRole('button', { name: 'Create', exact: true }).click();
+  const relations = page.getByRole('list', { name: 'Relations' });
+  await expect(relations.getByText('draws maps for')).toBeVisible();
+  await page.getByRole('button', { name: /^Delete relation Mapmaker/ }).click();
+  await expect(relations.getByRole('listitem')).toHaveCount(0);
+
+  // Deleting the image moves it to the trash.
+  await page.goto(`${project}/images`);
+  await page.getByRole('link', { name: /world-map\.png/ }).click();
+  await page.getByRole('button', { name: 'Delete' }).click();
+  await expect(page).toHaveURL(/\/images$/);
+  await page.goto(`${project}/trash`);
+  await expect(page.getByText('world-map.png').filter({ visible: true }).first()).toBeVisible();
 
   expect(errors).toEqual([]);
 });

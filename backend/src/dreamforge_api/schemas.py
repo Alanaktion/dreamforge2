@@ -287,6 +287,8 @@ class EntityDetail(Model):
     bookmarked: bool
     backlinks: list[Backlink]
     relations: list[EntityRelation]
+    images: list["ImageOut"]
+    project_images: list["ImageSummary"]
     project_name: str
     project_owner_id: str
     role: Literal["owner", "editor", "commenter"]
@@ -756,3 +758,89 @@ class Dashboard(Model):
     stats: ProjectStats
     progress: WritingProgress
     getting_started: GettingStarted
+
+
+# --- Images ---------------------------------------------------------------------------------
+
+
+class LinkedEntity(Model):
+    id: str
+    name: str
+    type: str
+
+
+class ImageOut(Model):
+    id: str
+    filename: str
+    original_name: str
+    mime_type: str
+    size: int
+    caption: str | None
+    alt_text: str | None
+    created_at: str
+    url: str
+    linked_entities: list[LinkedEntity]
+
+
+class ImageList(Model):
+    images: list[ImageOut]
+    project_name: str
+    role: str
+
+
+class ImageDetail(Model):
+    image: ImageOut
+    entities: list[EntitySummary]
+    project_name: str
+    role: str
+
+
+class ImageUpdate(Model):
+    """Either or both; an empty string clears the value."""
+
+    caption: Text | None = None
+    alt_text: Text | None = None
+
+
+# --- Relations page and search --------------------------------------------------------------
+
+
+class RelationOut(Model):
+    id: str
+    source_id: str
+    target_id: str
+    relation_type: str
+    label: str | None
+
+
+class RelationsPage(Model):
+    relations: list[RelationOut]
+    entities: list[EntitySummary]
+    project_name: str
+    role: str
+
+
+class SearchResult(Model):
+    kind: Literal["entity", "scene"]
+    id: str
+    type: str
+    name: str
+    context: str
+    href: str
+    tags: list[str]
+    status: str
+    modified_at: str
+    matched_in: Literal["name", "body", "field", "summary"]
+    snippet: str | None
+
+
+class SearchPage(Model):
+    query: str
+    kind: str
+    type: str
+    results: list[SearchResult]
+    project_name: str
+    role: str
+
+
+EntityDetail.model_rebuild()

@@ -6,11 +6,11 @@ import json
 from typing import Annotated, Any
 
 from fastapi import APIRouter, HTTPException, Query
-from sqlmodel import Session
+from sqlmodel import Session, col, select
 
 from ..db import Db, get_engine
 from ..deps import Auth, CurrentAuth
-from ..models import Entity, Project
+from ..models import Entity, Project, ProjectImage
 from ..schemas import (
     BookmarkResult,
     CommentCreate,
@@ -30,7 +30,16 @@ from ..schemas import (
     Saved,
     TrashedEntity,
 )
-from ..services import bookmarks, comments, custom_fields, members, relations, stories, trash
+from ..services import (
+    bookmarks,
+    comments,
+    custom_fields,
+    images,
+    members,
+    relations,
+    stories,
+    trash,
+)
 from ..services import entities as service
 from ..services.backlinks import get_backlinks
 from ..storage import expected_revision
@@ -164,6 +173,12 @@ def show_entity(project_id: str, route: str, entity_id: str, auth: CurrentAuth, 
         "bookmarked": bookmarks.is_bookmarked(db, auth.user.id, project_id, entity_id),
         "backlinks": get_backlinks(project, entity_id, entity["name"]),
         "relations": linked,
+        "images": images.images_for_entity(db, project_id, entity_id),
+        "project_images": db.exec(
+            select(ProjectImage)
+            .where(ProjectImage.project_id == project_id)
+            .order_by(col(ProjectImage.created_at))
+        ).all(),
         "project_name": project.name,
         "project_owner_id": project.user_id,
         "role": role,

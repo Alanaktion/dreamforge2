@@ -1,7 +1,9 @@
 <script lang="ts">
   import { page } from '$app/state';
-  import { enhance } from '$app/forms';
+  import { invalidateAll } from '$app/navigation';
   import { ArrowLeft, Upload, Image, X } from '@lucide/svelte';
+  import { ApiError } from '$lib/api';
+  import { IMAGE_ACCEPT, uploadImage, type ProjectImage } from '$lib/api/images';
   import { Button } from '$lib/components/ui/button';
 
   let uploadFiles = $state<File[]>([]);
@@ -13,6 +15,32 @@
     if (!input.files) return;
     uploadFiles = Array.from(input.files);
     previewUrls = uploadFiles.map((f) => URL.createObjectURL(f));
+  }
+
+  let error = $state<string | null>(null);
+  let readOnly = $derived(page.data?.role === 'commenter');
+  let images = $derived((page.data?.images ?? []) as ProjectImage[]);
+
+  async function upload(event: SubmitEvent) {
+    event.preventDefault();
+    uploading = true;
+    const failed: string[] = [];
+    const kept: File[] = [];
+    for (const file of uploadFiles) {
+      try {
+        await uploadImage(page.params.id ?? '', file);
+      } catch (cause) {
+        failed.push(cause instanceof ApiError ? `${file.name}: ${cause.message}` : file.name);
+        kept.push(file);
+      }
+    }
+    previewUrls.forEach((url) => URL.revokeObjectURL(url));
+    // Keep only the files that failed, so they can be retried or removed.
+    uploadFiles = kept;
+    previewUrls = kept.map((f) => URL.createObjectURL(f));
+    error = failed.length ? `Not uploaded: ${failed.join('; ')}` : null;
+    uploading = false;
+    await invalidateAll().catch(() => {});
   }
 
   function removePreview(i: number) {
@@ -41,80 +69,70 @@
     </p>
   </div>
 
-  <div class="mb-8 rounded-lg border border-border bg-card p-4">
-    <form
-      method="POST"
-      action="?/upload"
-      enctype="multipart/form-data"
-      use:enhance={() => {
-        return async ({ result, update }) => {
-          uploading = false;
-          if (result.type === 'success') {
-            uploadFiles = [];
-            previewUrls = [];
-            await update();
-          }
-        };
-      }}
-      class="space-y-4"
-    >
-      <label
-        class="flex items-center justify-center border-2 border-dashed border-border rounded-lg p-6"
-      >
-        <div class="flex cursor-pointer flex-col items-center gap-2">
-          <Upload class="h-8 w-8 text-muted-foreground" />
-          <span class="text-sm text-muted-foreground">Click to select images</span>
-          <span class="text-xs text-muted-foreground">PNG, JPG, GIF, WebP, SVG</span>
-          <input
-            type="file"
-            name="files"
-            accept=".png,.jpg,.jpeg,.gif,.webp,.svg"
-            multiple
-            required
-            class="hidden"
-            onchange={handleFileSelect}
-          />
-        </div>
-      </label>
+  {#if !readOnly}
+    <div class="mb-8 rounded-lg border border-border bg-card p-4">
+      <form onsubmit={upload} class="space-y-4">
+        <label
+          class="flex items-center justify-center border-2 border-dashed border-border rounded-lg p-6"
+        >
+          <div class="flex cursor-pointer flex-col items-center gap-2">
+            <Upload class="h-8 w-8 text-muted-foreground" />
+            <span class="text-sm text-muted-foreground">Click to select images</span>
+            <span class="text-xs text-muted-foreground">PNG, JPG, GIF, WebP, SVG</span>
+            <input
+              type="file"
+              accept={IMAGE_ACCEPT}
+              multiple
+              aria-label="Select images"
+              class="hidden"
+              onchange={handleFileSelect}
+            />
+          </div>
+        </label>
 
-      {#if previewUrls.length > 0}
-        <div class="flex flex-wrap gap-3">
-          {#each previewUrls as url, i}
-            <div class="group relative">
-              <img
-                src={url}
-                alt={uploadFiles[i].name}
-                class="h-24 w-24 rounded-lg border border-border object-cover"
-              />
-              <Button
-                type="button"
-                variant="destructive"
-                size="icon-xs"
-                class="absolute -right-1.5 -top-1.5 opacity-0 group-hover:opacity-100 rounded-full"
-                onclick={() => removePreview(i)}
-              >
-                <X class="h-3 w-3" />
-              </Button>
-              <p class="mt-1 max-w-24 truncate text-xs text-muted-foreground">
-                {uploadFiles[i].name}
-              </p>
-            </div>
-          {/each}
-        </div>
-      {/if}
+        {#if previewUrls.length > 0}
+          <div class="flex flex-wrap gap-3">
+            {#each previewUrls as url, i}
+              <div class="group relative">
+                <img
+                  src={url}
+                  alt={uploadFiles[i].name}
+                  class="h-24 w-24 rounded-lg border border-border object-cover"
+                />
+                <Button
+                  type="button"
+                  variant="destructive"
+                  size="icon-xs"
+                  class="absolute -right-1.5 -top-1.5 opacity-0 group-hover:opacity-100 rounded-full"
+                  onclick={() => removePreview(i)}
+                  aria-label="Remove {uploadFiles[i].name}"
+                >
+                  <X class="h-3 w-3" />
+                </Button>
+                <p class="mt-1 max-w-24 truncate text-xs text-muted-foreground">
+                  {uploadFiles[i].name}
+                </p>
+              </div>
+            {/each}
+          </div>
+        {/if}
 
-      {#if uploadFiles.length > 0}
-        <Button type="submit" disabled={uploading}>
-          {uploading
-            ? 'Uploading...'
-            : `Upload ${uploadFiles.length} file${uploadFiles.length > 1 ? 's' : ''}`}
-        </Button>
-      {/if}
-    </form>
-  </div>
+        {#if uploadFiles.length > 0}
+          <Button type="submit" disabled={uploading}>
+            {uploading
+              ? 'Uploading...'
+              : `Upload ${uploadFiles.length} file${uploadFiles.length > 1 ? 's' : ''}`}
+          </Button>
+        {/if}
+        {#if error}
+          <p class="text-sm text-destructive" role="alert">{error}</p>
+        {/if}
+      </form>
+    </div>
+  {/if}
 
   <div>
-    {#if (page.data?.images || []).length === 0}
+    {#if images.length === 0}
       <div class="flex flex-col items-center gap-3 py-16 text-muted-foreground">
         <Image class="h-12 w-12 opacity-30" />
         <p class="max-w-md text-center text-sm">
@@ -124,7 +142,7 @@
       </div>
     {:else}
       <div class="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-        {#each page.data.images as img}
+        {#each images as img (img.id)}
           <a
             href="/projects/{page.params.id}/images/{img.id}"
             class="group rounded-lg border border-border bg-card overflow-hidden hover:border-primary/50"

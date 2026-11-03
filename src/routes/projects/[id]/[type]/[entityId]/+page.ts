@@ -2,6 +2,7 @@ import { error, redirect } from '@sveltejs/kit';
 import { load as get } from '$lib/api';
 import { entityPath, fieldsFor, type CustomField, type Entity } from '$lib/api/entities';
 import type { EntitySummary } from '$lib/api/entities';
+import type { ProjectImage } from '$lib/api/images';
 import type { Backlink } from '$lib/types';
 import { routeToEntityType } from '$lib/utils/entityTypes';
 import type { PageLoad } from './$types';
@@ -12,6 +13,13 @@ interface EntityDetail {
   index: EntitySummary[];
   bookmarked: boolean;
   backlinks: Backlink[];
+  images: ProjectImage[];
+  projectImages: Array<{
+    id: string;
+    filename: string;
+    originalName: string;
+    altText: string | null;
+  }>;
   relations: Array<{
     id: string;
     outgoing: boolean;
@@ -49,13 +57,13 @@ export const load: PageLoad = async ({ fetch, params, parent }) => {
     projectName: data.projectName,
     entityType,
     bookmarked: data.bookmarked,
-    // Where "Convert to Scene" can put a note. Image links arrive with the images port.
+    // Where "Convert to Scene" can put a note.
     stories,
     customFields: fieldsFor(entityType, data.customFields),
     backlinks: data.backlinks,
     relations: data.relations,
-    entityImages: [] as Array<{ id: string; url: string; altText?: string; originalName: string }>,
-    projectImages: [] as Array<{ id: string; filename: string; originalName: string }>,
+    entityImages: data.images,
+    projectImages: data.projectImages,
     entities: data.index,
     role: data.role,
     currentUserId: user.id,

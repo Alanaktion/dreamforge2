@@ -4,7 +4,7 @@
   import { api, ApiError } from '$lib/api';
   import { deleteEntity, entityPath, splitList, type FieldValue } from '$lib/api/entities';
   import { noteToScene } from '$lib/api/stories';
-  import NotPorted from '$lib/components/NotPorted.svelte';
+  import { linkImage, unlinkImage } from '$lib/api/images';
   import { beforeNavigate, goto, invalidateAll } from '$app/navigation';
   import { ENTITY_LABELS, ENTITY_PLURAL, type FieldDef } from '$lib/entityFields';
   import { entityTypeToRoute } from '$lib/utils/entityTypes';
@@ -23,6 +23,7 @@
     SwitchCamera,
     Link2,
     ImagePlus,
+    Unlink,
     FileText,
     Copy,
     Share2,
@@ -375,6 +376,41 @@
     });
   }
 
+  let selectedImageId = $state('');
+  let entityImages = $derived(
+    (page.data?.entityImages ?? []) as Array<{
+      id: string;
+      url: string;
+      altText: string | null;
+      originalName: string;
+    }>
+  );
+  let linkableImages = $derived(
+    (page.data?.projectImages ?? [])
+      .filter((img: { id: string }) => !entityImages.some((linked) => linked.id === img.id))
+      .map((img: { id: string; originalName: string }) => ({
+        value: img.id,
+        label: img.originalName
+      }))
+  );
+
+  function attachImage() {
+    if (!selectedImageId) return;
+    const imageId = selectedImageId;
+    return act(async () => {
+      await linkImage(page.params.id!, imageId, page.params.entityId!);
+      selectedImageId = '';
+      await invalidateAll();
+    });
+  }
+
+  function detachImage(imageId: string) {
+    return act(async () => {
+      await unlinkImage(page.params.id!, imageId, page.params.entityId!);
+      await invalidateAll();
+    });
+  }
+
   function removeRelation(relationId: string) {
     return act(async () => {
       await api(`/api/projects/${page.params.id}/relations/${encodeURIComponent(relationId)}`, {
@@ -669,8 +705,48 @@
           </a>
         {/if}
       </div>
-      <!-- Linking images waits for the images port (legacy linkImage/unlinkImage). -->
-      <NotPorted />
+      {#if entityImages.length === 0}
+        <p class="py-2 text-xs text-muted-foreground">No images linked to this entry.</p>
+      {:else}
+        <div class="flex flex-wrap gap-2">
+          {#each entityImages as img (img.id)}
+            <div class="group relative">
+              <a href="/projects/{page.params.id}/images/{img.id}" class="block">
+                <img
+                  src={img.url}
+                  alt={img.altText || img.originalName}
+                  class="h-20 w-20 rounded-lg border border-border object-cover"
+                />
+              </a>
+              {#if canEdit}
+                <Button
+                  variant="destructive"
+                  size="icon-xs"
+                  class="absolute -right-1.5 -top-1.5 rounded-full opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+                  onclick={() => detachImage(img.id)}
+                  aria-label="Unlink image {img.originalName}"
+                >
+                  <Unlink class="h-3 w-3" />
+                </Button>
+              {/if}
+            </div>
+          {/each}
+        </div>
+      {/if}
+      {#if canEdit && linkableImages.length > 0}
+        <div class="mt-3 flex gap-2">
+          <Combobox
+            bind:value={selectedImageId}
+            options={linkableImages}
+            placeholder="Select an image..."
+            class="flex-1"
+          />
+          <Button size="sm" onclick={attachImage} disabled={!selectedImageId}>
+            <Link2 class="h-3 w-3" />
+            Link
+          </Button>
+        </div>
+      {/if}
     </div>
   </div>
 
