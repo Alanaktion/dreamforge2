@@ -268,6 +268,13 @@
         moveActive(0, -1);
         break;
       case 'Tab':
+        if (
+          (e.shiftKey && activeCell.row === 0 && activeCell.col <= 1) ||
+          (!e.shiftKey &&
+            activeCell.row === rows.length - 1 &&
+            activeCell.col === columns.length - 1)
+        )
+          return;
         e.preventDefault();
         if (
           !e.shiftKey &&
@@ -314,10 +321,16 @@
     focusActiveCell();
   }
 
-  // Keep the cursor in bounds when the filtered row set shrinks.
+  // Keep the cursor in bounds when rows are filtered or columns are hidden.
   $effect(() => {
-    if (activeCell && activeCell.row >= rows.length) {
-      activeCell = rows.length ? { ...activeCell, row: rows.length - 1 } : null;
+    if (activeCell && (activeCell.row >= rows.length || activeCell.col >= columns.length)) {
+      activeCell =
+        rows.length && columns.length
+          ? {
+              row: Math.min(activeCell.row, rows.length - 1),
+              col: Math.min(activeCell.col, columns.length - 1)
+            }
+          : null;
     }
   });
 </script>

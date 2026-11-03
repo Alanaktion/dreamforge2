@@ -11,12 +11,18 @@ it('upgrades a legacy entity table without losing rows and allows project-scoped
     CREATE TABLE projects (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, name TEXT NOT NULL, description TEXT, data_path TEXT NOT NULL, pinned INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, modified_at TEXT NOT NULL);
     CREATE TABLE entities (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, type TEXT NOT NULL, name TEXT NOT NULL, tags TEXT, status TEXT NOT NULL, image_path TEXT, created_at TEXT NOT NULL, modified_at TEXT NOT NULL);
     INSERT INTO users VALUES ('u','user@example.test','writer','hash','now');
-    INSERT INTO projects VALUES ('a','u','A',NULL,'/a',0,'now','now'), ('b','u','B',NULL,'/b',0,'now','now');
+    INSERT INTO projects VALUES ('a','u','A',NULL,'/a',0,'now','now'), ('b','u','B',NULL,'/b',1,'now','now');
     INSERT INTO entities VALUES ('shared','a','character','Original','[]','draft',NULL,'now','now');
   `);
   migrate();
   migrate();
   expect(testDb.pragma('user_version', { simple: true })).toBe(3);
+  expect(testDb.prepare('SELECT is_admin FROM users WHERE id = ?').get('u')).toEqual({
+    is_admin: 1
+  });
+  expect(testDb.prepare('SELECT user_id, project_id FROM project_pins').all()).toEqual([
+    { user_id: 'u', project_id: 'b' }
+  ]);
   expect(testDb.prepare('SELECT name FROM entities WHERE project_id = ?').get('a')).toEqual({
     name: 'Original'
   });

@@ -56,7 +56,8 @@ export function watchProject(projectId: string, projectPath: string): void {
   };
 
   const isProjectFile = (filePath: string) =>
-    filePath.endsWith('.md') || filePath.endsWith('.json');
+    filePath.endsWith('.md') ||
+    (filePath.endsWith('.json') && path.basename(filePath) !== 'metadata.json');
 
   watcher.on('add', (filePath) => {
     if (isProjectFile(filePath)) touch();
