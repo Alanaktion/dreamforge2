@@ -1,6 +1,8 @@
 <script lang="ts">
   import { page } from '$app/state';
-  import { enhance } from '$app/forms';
+  import { goto, invalidateAll } from '$app/navigation';
+  import { api, apiForm, ApiError } from '$lib/api';
+  import type { Preset } from '$lib/api/types';
   import {
     Plus,
     Pin,
@@ -9,8 +11,7 @@
     FolderOpen,
     BookOpen,
     Users,
-    Map,
-    Sparkles
+    Map
   } from '@lucide/svelte';
   import { cn, formatDate } from '$lib/utils';
   import { Button } from '$lib/components/ui/button';
@@ -24,11 +25,22 @@
   let description = $state('');
   let creating = $state(false);
   let presetChoice = $state('blank');
+  let error = $state('');
+
+  async function togglePin(projectId: string) {
+    error = '';
+    try {
+      await api(`/api/projects/${projectId}/pin`, { method: 'POST' });
+      await invalidateAll();
+    } catch (cause) {
+      error = cause instanceof ApiError ? cause.message : 'Could not reach the server.';
+    }
+  }
 </script>
 
 {#snippet summaryLine(project: {
   modifiedAt: string;
-  summary: { entityCount: number; storyCount: number; wordCount: number } | null;
+  summary?: { entityCount: number; storyCount: number; wordCount: number } | null;
 })}
   <p class="mt-1 flex flex-wrap gap-x-3 text-xs text-muted-foreground">
     {#if project.summary}
@@ -53,7 +65,7 @@
   pinned: boolean;
   isOwner: boolean;
   modifiedAt: string;
-  summary: { entityCount: number; storyCount: number; wordCount: number } | null;
+  summary?: { entityCount: number; storyCount: number; wordCount: number } | null;
 })}
   <div
     class={cn(
@@ -76,22 +88,19 @@
       {@render summaryLine(project)}
     </div>
     <div class="flex items-center gap-1">
-      <form method="POST" action="?/togglePin" use:enhance>
-        <input type="hidden" name="projectId" value={project.id} />
-        <Button
-          type="submit"
-          variant="ghost"
-          size="icon-sm"
-          aria-label={project.pinned ? `Unpin ${project.name}` : `Pin ${project.name}`}
-          title={project.pinned ? 'Unpin' : 'Pin to top'}
-        >
-          {#if project.pinned}
-            <PinOff class="h-4 w-4" />
-          {:else}
-            <Pin class="h-4 w-4" />
-          {/if}
-        </Button>
-      </form>
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        aria-label={project.pinned ? `Unpin ${project.name}` : `Pin ${project.name}`}
+        title={project.pinned ? 'Unpin' : 'Pin to top'}
+        onclick={() => togglePin(project.id)}
+      >
+        {#if project.pinned}
+          <PinOff class="h-4 w-4" />
+        {:else}
+          <Pin class="h-4 w-4" />
+        {/if}
+      </Button>
       <Button
         href="/projects/{project.id}"
         variant="ghost"
@@ -121,15 +130,15 @@
     <div class="mb-6 rounded-lg border border-border bg-card p-4">
       <h2 class="mb-4 text-lg font-semibold">Create Project</h2>
       <form
-        method="POST"
-        action="?/create"
-        use:enhance={() => {
-          creating = true;
-          return async ({ update }) => {
+        use:apiForm={{
+          path: '/api/projects',
+          onresult: async (result) => {
             creating = false;
-            await update();
-          };
+            if (result.ok) await goto(`/projects/${(result.data as { id: string }).id}`);
+            else error = result.error;
+          }
         }}
+        onsubmit={() => (creating = true)}
         class="space-y-4"
       >
         <div class="space-y-1.5">
@@ -143,13 +152,22 @@
         <fieldset class="space-y-2">
           <legend class="text-sm font-medium">Start from</legend>
           <div class="grid gap-2 sm:grid-cols-2">
-            {#each Object.entries((page.data?.presets ?? {}) as Record<string, { label: string; description: string }>) as [value, preset] (value)}
+            {#each Object.entries((page.data?.presets ?? {}) as Record<string, Preset>) as [value, preset] (value)}
               <label
-                class="flex cursor-pointer gap-2 rounded-lg border border-border p-3 text-sm has-[:checked]:border-primary has-[:checked]:bg-secondary"
+                class="flex cursor-pointer gap-2 rounded-lg border border-border p-3 text-sm has-[:checked]:border-primary has-[:checked]:bg-secondary has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-60"
               >
-                <input type="radio" name="preset" {value} bind:group={presetChoice} class="mt-1" />
+                <input
+                  type="radio"
+                  name="preset"
+                  {value}
+                  bind:group={presetChoice}
+                  disabled={!preset.available}
+                  class="mt-1"
+                />
                 <span>
-                  <span class="block font-medium">{preset.label}</span>
+                  <span class="block font-medium"
+                    >{preset.label}{preset.available ? '' : ' (coming soon)'}</span
+                  >
                   <span class="block text-xs text-muted-foreground">{preset.description}</span>
                 </span>
               </label>
@@ -163,16 +181,10 @@
           >
         </div>
       </form>
-      <form method="POST" action="?/sample" use:enhance class="mt-3 border-t border-border pt-3">
-        <Button type="submit" variant="link" size="sm" class="px-0">
-          <Sparkles class="h-4 w-4" />
-          Or explore a sample world first
-        </Button>
-      </form>
     </div>
   {/if}
 
-  {#if page.form?.error}<p role="alert" class="text-destructive">{page.form.error}</p>{/if}
+  {#if error}<p role="alert" class="text-destructive">{error}</p>{/if}
   <div class="space-y-3">
     {#if (page.data?.projects?.length ?? 0) === 0 && (page.data?.sharedProjects?.length ?? 0) === 0}
       <div class="flex flex-col items-center py-16 text-center">
@@ -227,17 +239,7 @@
             <Plus class="h-4 w-4" />
             Create Your First Project
           </Button>
-          <form method="POST" action="?/sample" use:enhance>
-            <Button type="submit" size="lg" variant="outline">
-              <Sparkles class="h-4 w-4" />
-              Explore a sample world
-            </Button>
-          </form>
         </div>
-        <p class="mt-3 max-w-md text-xs text-muted-foreground">
-          The sample is a normal project with a few characters, places, a two-chapter story,
-          relations, and a timeline. Delete it from its Settings page whenever you like.
-        </p>
       </div>
     {/if}
 
@@ -256,18 +258,4 @@
       </div>
     {/if}
   </div>
-  <details class="mt-8 rounded-lg border border-border p-4 text-sm">
-    <summary class="cursor-pointer font-medium">Import a project</summary>
-    <form
-      method="POST"
-      action="?/import"
-      enctype="multipart/form-data"
-      use:enhance
-      class="mt-3 space-y-2"
-    >
-      <Label for="archive">Import project from ZIP (up to 20 MB)</Label>
-      <input id="archive" name="archive" type="file" accept=".zip" required />
-      <Button type="submit" variant="outline">Import project</Button>
-    </form>
-  </details>
 </div>

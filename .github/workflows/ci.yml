@@ -17,7 +17,15 @@ jobs:
           node-version: 22
           cache: npm
 
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+
       - run: npm ci
+      - run: uv sync --project backend --locked
+      - run: npm run lint:api
+      - run: npm run test:api
       - run: npx svelte-kit sync
       - run: npm run lint
       - run: npm run check
@@ -30,3 +38,18 @@ jobs:
         with:
           name: playwright-results
           path: test-results/
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t dreamforge:ci .
+      - name: Start the image and check it serves the API and the app
+        run: |
+          docker run -d --name df -p 3000:3000 -e ADMIN_PASSWORD=ci-password-1 dreamforge:ci
+          for i in $(seq 30); do curl -fsS http://127.0.0.1:3000/healthz && break; sleep 2; done
+          curl -fsS http://127.0.0.1:3000/api/auth/me
+          curl -fsS http://127.0.0.1:3000/projects | grep -q '<html'
+          docker inspect --format '{{.State.Health.Status}}' df
+      - if: failure()
+        run: docker logs df

@@ -1,6 +1,13 @@
 # DreamForge
 
-Open-source, self-hosted web app for fiction worldbuilding and writing. Markdown-first, SvelteKit-based.
+Open-source, self-hosted web app for fiction worldbuilding and writing. Markdown-first, with a
+SvelteKit single-page frontend and a FastAPI (Python) backend.
+
+> **Backend rework in progress.** The server is moving from SvelteKit server routes to FastAPI
+> (`backend/`). Sign-in, accounts, instance admin, invites, members, pins and the project list
+> are on the new backend. Project content (entities, stories, plots, images, search, trash,
+> backups, import/export) is not yet: those pages show "Not available yet". The previous
+> server code is kept under `legacy/routes/` and `src/lib/server/` as the reference for porting.
 
 ## Quick Start (Docker)
 
@@ -33,22 +40,38 @@ docker compose up -d
 
 Set via environment variables:
 
-| Variable                    | Default                  | Description                                          |
-| --------------------------- | ------------------------ | ---------------------------------------------------- |
-| `DATABASE_PATH`             | `/data/dreamforge.db`    | SQLite database path                                 |
-| `DATA_DIR`                  | `/data/projects`         | Projects directory                                   |
-| `PUBLIC_ALLOW_REGISTRATION` | `false`                  | Allow new user signups                               |
-| `ADMIN_EMAIL`               | `admin@dreamforge.local` | Initial admin email                                  |
-| `ADMIN_PASSWORD`            | Generated once           | Initial admin password                               |
-| `BODY_SIZE_LIMIT`           | `20971520` (20 MB)       | Max upload size in bytes (e.g. `52428800` for 50 MB) |
+| Variable                    | Default                  | Description                                                               |
+| --------------------------- | ------------------------ | ------------------------------------------------------------------------- |
+| `DATABASE_PATH`             | `/data/dreamforge.db`    | SQLite database path                                                      |
+| `DATA_DIR`                  | `/data/projects`         | Projects directory                                                        |
+| `PUBLIC_ALLOW_REGISTRATION` | `false`                  | Allow new user signups                                                    |
+| `ADMIN_EMAIL`               | `admin@dreamforge.local` | Initial admin email                                                       |
+| `ADMIN_PASSWORD`            | Generated once           | Initial admin password                                                    |
+| `ORIGIN`                    | unset                    | Public URL(s), comma-separated; API writes from other origins are refused |
+| `FRONTEND_DIR`              | `./build`                | The built SPA that FastAPI serves                                         |
+| `BODY_SIZE_LIMIT`           | `20971520` (20 MB)       | Largest accepted request body in bytes                                    |
+| `FORWARDED_ALLOW_IPS`       | `127.0.0.1`              | Reverse proxies to trust for X-Forwarded-* headers                        |
 
 ## Development
+
+You need Node 22 and [uv](https://docs.astral.sh/uv/) (which installs Python 3.12 for you).
 
 ```bash
 cp .env.example .env
 npm install
+uv sync --project backend
 npm run dev
 ```
+
+`npm run dev` starts both apps: Vite on http://localhost:5173 with hot reload, and FastAPI on
+port 8000, reloading when Python files change. Open the Vite URL; it proxies `/api` to FastAPI,
+so the browser sees one origin, as in production. Run either side alone with `npm run dev:web`
+(point it at another API with `API_URL`) or `npm run dev:api`. FastAPI's interactive API docs
+are at http://localhost:5173/api/docs (development only; set `API_DOCS=true` to enable them elsewhere).
+
+In production there is one process: `npm run build` writes the SPA to `build/`, and
+`npm start` runs FastAPI, which serves `/api/*`, the built assets, and `index.html` for every
+other path so client-side routing works on reload and deep links.
 
 Or with Docker for hot-reload:
 
@@ -56,20 +79,33 @@ Or with Docker for hot-reload:
 docker compose -f docker-compose.dev.yml up
 ```
 
+### Layout
+
+| Path                         | What                                                        |
+| ---------------------------- | ----------------------------------------------------------- |
+| `src/`                       | SvelteKit SPA (`adapter-static`, `ssr = false`)             |
+| `src/lib/api/`               | Typed client for the API, and `use:apiForm` for JSON forms  |
+| `backend/src/dreamforge_api` | FastAPI app: `routers/`, `services/`, SQLModel `models.py`  |
+| `backend/.../migrate.py`     | Hand-written SQLite migrations (`PRAGMA user_version`)      |
+| `legacy/routes/`             | Old SvelteKit server routes, kept until each area is ported |
+
 ## Scripts
 
-| Command                       | Description                                     |
-| ----------------------------- | ----------------------------------------------- |
-| `npm run dev`                 | Start dev server with hot-reload                |
-| `npm run build`               | Production build                                |
-| `npm run preview`             | Preview production build                        |
-| `npm test`                    | Run tests                                       |
-| `npm run check`               | Type-check                                      |
-| `npm run lint`                | Lint                                            |
-| `npm run format`              | Format code                                     |
-| `npm run db:migrate`          | Apply database migrations (also run on startup) |
-| `npm run user:add`            | Create an account (see below)                   |
-| `npm run user:reset-password` | Reset an account's password (see below)         |
+| Command                         | Description                                      |
+| ------------------------------- | ------------------------------------------------ |
+| `npm run dev`                   | Vite + FastAPI, both reloading                   |
+| `npm run dev:web`               | Vite only (proxies `/api` to `API_URL`)          |
+| `npm run dev:api`               | FastAPI only, with reload                        |
+| `npm run build`                 | Build the SPA into `build/`                      |
+| `npm start`                     | Serve the built SPA and the API on `PORT` (3000) |
+| `npm test` / `npm run test:api` | Frontend (Vitest) / backend (pytest) tests       |
+| `npm run test:e2e`              | Playwright, against `npm start` (build first)    |
+| `npm run check`                 | Type-check                                       |
+| `npm run lint` / `lint:api`     | Lint the frontend / the backend (ruff)           |
+| `npm run format`                | Format code                                      |
+| `npm run db:migrate`            | Apply database migrations (also run on startup)  |
+| `npm run user:add`              | Create an account (see below)                    |
+| `npm run user:reset-password`   | Reset an account's password (see below)          |
 
 ### Managing accounts from the command line
 
@@ -83,7 +119,7 @@ npm run user:add -- --email ada@example.com --username ada --admin
 npm run user:reset-password -- ada@example.com
 ```
 
-Without `--password`, both commands print a temporary password that must be changed at the next
+These run the backend's CLI (`uv run --project backend dreamforge --help`). Without `--password`, both commands print a temporary password that must be changed at the next
 sign-in. Pass `--password <password>` (at least 8 characters) to set one directly; note that it
 will end up in your shell history.
 
@@ -121,7 +157,13 @@ if you need to recover instance accounts and permissions.
 
 Set `ORIGIN` to the exact externally visible URL, including scheme and port, such
 as `https://writing.example.com`. Direct local HTTP uses
-`ORIGIN=http://localhost:3000`. Do not disable SvelteKit's CSRF protection.
+`ORIGIN=http://localhost:3000`. The API refuses writes whose `Origin` header doesn't match.
+Without `ORIGIN`, it compares against the request's `Host` header instead.
+
+Set `FORWARDED_ALLOW_IPS` to the proxy's address or range (for example `172.16.0.0/12` for a
+proxy on a Docker network; never `*`, which lets any client spoof its IP) so
+uvicorn trusts its `X-Forwarded-For` and `X-Forwarded-Proto` headers. Those feed the login
+throttle and decide whether the session cookie is marked `Secure`.
 
 Caddy:
 
@@ -141,10 +183,6 @@ location / {
 }
 ```
 
-For deployments serving multiple origins, configure `PROTOCOL_HEADER=x-forwarded-proto`
-instead of `ORIGIN` only when the app is accessible exclusively through a trusted
-proxy that replaces that header.
-
-The container runs as the `node` user (UID 1000). When upgrading an existing
+The container runs as an unprivileged user with UID 1000, as before. When upgrading an existing
 installation, ensure its mounted `/data` directory and files are writable by UID 1000. Initial administrator accounts must change their password on first login;
 the Account page also changes email and username and revokes other sessions.

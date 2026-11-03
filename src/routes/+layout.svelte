@@ -21,8 +21,8 @@
   let mainEl = $state<HTMLElement | null>(null);
 
   afterNavigate(({ type, from, to }) => {
-    if (type === 'popstate' || to?.url.hash) return;
-    if (from?.url.pathname === to?.url.pathname) return;
+    if (type === 'popstate' || to?.url?.hash) return;
+    if (!from?.url || from.url.pathname === to?.url?.pathname) return;
     mainEl?.scrollTo({ top: 0 });
   });
 

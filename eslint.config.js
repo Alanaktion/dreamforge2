@@ -8,6 +8,7 @@ export default ts.config(
   {
     ignores: [
       'build/',
+      'backend/',
       'work/',
       'test-results/',
       'playwright-report/',

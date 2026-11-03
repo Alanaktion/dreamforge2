@@ -14,3 +14,7 @@ CLAUDE.md
 work/
 test-results/
 playwright-report/
+backend/.venv/
+backend/.pytest_cache/
+backend/.ruff_cache/
+__pycache__/

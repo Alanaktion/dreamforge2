@@ -8,15 +8,20 @@ services:
     ports:
       - '3000:3000'
     environment:
-      - NODE_ENV=production
       - PORT=3000
-      - BODY_SIZE_LIMIT=${BODY_SIZE_LIMIT:-20971520}
       - DATABASE_PATH=/data/dreamforge.db
       - DATA_DIR=/data/projects
       - PUBLIC_ALLOW_REGISTRATION=${PUBLIC_ALLOW_REGISTRATION:-false}
       - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@dreamforge.local}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
       - ORIGIN=${ORIGIN:-http://localhost:3000}
+      # Addresses (or CIDR ranges) of reverse proxies whose X-Forwarded-For/-Proto to trust,
+      # e.g. 172.16.0.0/12 for a proxy on a Docker network. Never '*': any client could then
+      # spoof its IP past the login throttle. The default trusts only the container itself.
+      - FORWARDED_ALLOW_IPS=${FORWARDED_ALLOW_IPS:-127.0.0.1}
+      # Largest accepted request body in bytes (default 20 MB).
+      - BODY_SIZE_LIMIT=${BODY_SIZE_LIMIT:-20971520}
+      # Backups have not moved to the FastAPI server yet; these are read again once they do.
       - BACKUP_DIR=/data/backups
       - BACKUP_INTERVAL=${BACKUP_INTERVAL:-86400}
       - BACKUP_RETENTION=${BACKUP_RETENTION:-10}

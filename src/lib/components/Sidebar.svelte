@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { afterNavigate } from '$app/navigation';
+  import { afterNavigate, goto } from '$app/navigation';
+  import { api } from '$lib/api';
   import { page } from '$app/state';
   import { entityTypeToRoute } from '$lib/utils/entityTypes';
   import { ENTITY_PLURAL, ENTITY_LABELS } from '$lib/entityFields';
@@ -79,6 +80,11 @@
   afterNavigate(() => {
     if (sidebar?.isMobile) sidebar.setOpenMobile(false);
   });
+
+  async function logOut() {
+    await api('/api/auth/logout', { method: 'POST' }).catch(() => undefined);
+    await goto('/', { invalidateAll: true });
+  }
 </script>
 
 {#snippet navLink(label: string, Icon: typeof Users, href: string, active: boolean)}
@@ -289,7 +295,13 @@
           page.url.pathname.startsWith('/admin')
         )}
       {/if}
-      {@render navLink('Log out', LogOut, '/logout', false)}
+      <Sidebar.MenuItem>
+        <!-- A button, not a link: link preloading or a cross-site link must not sign you out. -->
+        <Sidebar.MenuButton onclick={logOut} tooltipContent="Log out">
+          <LogOut class="h-4 w-4" />
+          <span>Log out</span>
+        </Sidebar.MenuButton>
+      </Sidebar.MenuItem>
     </Sidebar.Menu>
   </Sidebar.Footer>
 

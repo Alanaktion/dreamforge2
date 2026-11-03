@@ -8,7 +8,7 @@ services:
     ports:
       - '5173:5173'
     environment:
-      - NODE_ENV=development
+      - ORIGIN=http://localhost:5173
       - DATABASE_PATH=/data/dreamforge.db
       - DATA_DIR=/data/projects
       - PUBLIC_ALLOW_REGISTRATION=true
@@ -17,6 +17,7 @@ services:
     volumes:
       - .:/app
       - /app/node_modules
+      - /app/backend/.venv
       - dreamforge-dev-data:/data
 
 volumes:

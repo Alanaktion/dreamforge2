@@ -1,32 +1,37 @@
-# Stage 1: Build
-FROM node:22-alpine AS builder
+# Stage 1: build the SvelteKit single-page app
+FROM node:22-alpine AS web
 WORKDIR /app
-RUN apk add --no-cache python3 make g++
 COPY package.json package-lock.json ./
-RUN npm ci
+# --ignore-scripts: the SPA build needs no native modules. better-sqlite3 (used only by the
+# legacy server code's tests) would otherwise need a compiler toolchain here.
+RUN npm ci --ignore-scripts
 COPY . .
 RUN npx svelte-kit sync && npm run build
 
-# Stage 2: Production
-FROM node:22-alpine AS runner
+# Stage 2: the FastAPI server, which serves the API and the built app
+FROM python:3.12-slim AS runner
+COPY --from=ghcr.io/astral-sh/uv:0.11 /uv /bin/uv
 WORKDIR /app
-RUN apk add --no-cache dumb-init
+ENV UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    UV_PROJECT_ENVIRONMENT=/app/.venv
+COPY backend/pyproject.toml backend/uv.lock backend/README.md ./backend/
+RUN uv sync --project backend --locked --no-dev --no-install-project
+COPY backend/src ./backend/src
+RUN uv sync --project backend --locked --no-dev
+COPY --from=web /app/build ./build
 
-ENV NODE_ENV=production
-ENV PORT=3000
-ENV BODY_SIZE_LIMIT=20971520
-
-COPY package.json package-lock.json ./
-RUN npm ci --omit=dev --ignore-scripts
-COPY --from=builder /app/node_modules/better-sqlite3/build ./node_modules/better-sqlite3/build
-COPY --from=builder /app/build ./build
-
-RUN mkdir -p /data && chown node:node /data
-ENV DATABASE_PATH=/data/dreamforge.db
-ENV DATA_DIR=/data/projects
-USER node
-HEALTHCHECK --interval=30s --timeout=5s --start-period=30s CMD node -e "fetch('http://127.0.0.1:3000/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+ENV PATH=/app/.venv/bin:$PATH \
+    PORT=3000 \
+    DATABASE_PATH=/data/dreamforge.db \
+    DATA_DIR=/data/projects \
+    FRONTEND_DIR=/app/build
+# uid 1000 matches the previous Node image's user, so existing /data volumes stay writable.
+RUN useradd --system --uid 1000 --no-create-home dreamforge && mkdir -p /data && chown dreamforge /data
+USER dreamforge
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s CMD python -c "import os, urllib.request; urllib.request.urlopen(f'http://127.0.0.1:{os.environ[\"PORT\"]}/healthz')"
 EXPOSE 3000
 VOLUME ["/data"]
-ENTRYPOINT ["dumb-init", "--"]
-CMD ["node", "build/index.js"]
+# Behind a reverse proxy in another container, set FORWARDED_ALLOW_IPS to its address so
+# uvicorn trusts its X-Forwarded-For (used by the login throttle) and X-Forwarded-Proto.
+CMD ["sh", "-c", "exec uvicorn dreamforge_api.main:app --host 0.0.0.0 --port \"$PORT\" --proxy-headers"]
