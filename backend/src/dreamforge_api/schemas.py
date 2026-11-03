@@ -2,7 +2,7 @@
 
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 from pydantic.alias_generators import to_camel
 
 Role = Literal["editor", "commenter"]
@@ -476,11 +476,17 @@ class PlotBeatOut(Model):
     id: str | None = None
     title: str
     scene_id: str | None = None
+    sort_order: float = 0
 
 
 class PlotlineOut(Model):
     id: str
+    story_id: str = ""
     title: str
+    template: str | None = None
+    sort_order: float = 0
+    created_at: str = ""
+    modified_at: str = ""
     beats: list[PlotBeatOut]
 
 
@@ -568,3 +574,185 @@ class TrashList(Model):
 
 class Deleted(Model):
     deleted: int
+
+
+# --- Plotlines ------------------------------------------------------------------------------
+
+PlotTemplate = Literal["heros_journey", "save_the_cat", "snowflake"]
+
+
+class StoryRef(Model):
+    id: str
+    title: str
+
+
+class PlotlineList(Model):
+    plotlines: list[PlotlineOut]
+    stories: list[StoryRef]
+    project_name: str
+    role: str
+
+
+class PlotlineCreate(Model):
+    title: Name = ""
+    story_id: Name = ""
+    template: PlotTemplate | None = None
+
+
+class PlotlineDetail(Model):
+    plotline: PlotlineOut
+    chapters: list[ChapterWithScenes]
+    project_name: str
+    role: str
+
+
+class PlotlineRename(Model):
+    title: Name = ""
+
+
+class BeatCreate(Model):
+    title: Name = ""
+
+
+class BeatUpdate(Model):
+    """Either or both; ``sceneId: null`` unlinks the scene."""
+
+    title: Name | None = None
+    scene_id: Name | None = None
+
+
+# --- Timeline -------------------------------------------------------------------------------
+
+Significance = Literal["major", "minor", "trivial"]
+Year = Annotated[int, Field(ge=-(10**12), le=10**12)]
+Small = Annotated[int, Field(ge=0, le=10_000)]
+
+
+class CalendarOut(Model):
+    name: str
+    months: list[str]
+    epoch: float = 0
+
+
+class TimelineEventOut(Model):
+    id: str
+    year: int
+    month: int | None
+    day: int | None
+    era: str
+    title: str
+    description: str
+    significance: Significance
+    entity_ids: list[str]
+    created_at: str
+    modified_at: str
+
+
+class TimelineOut(Model):
+    calendar: CalendarOut
+    events: list[TimelineEventOut]
+
+
+class EntityRef(Model):
+    id: str
+    name: str
+    type: str
+
+
+class TimelinePage(Model):
+    timeline: TimelineOut
+    entities: list[EntityRef]
+    project_name: str
+    role: str
+
+
+class EventCreate(Model):
+    year: Year
+    month: Small | None = None
+    day: Small | None = None
+    era: Name = "CE"
+    title: Name = ""
+    description: Body = ""
+    significance: Significance = "minor"
+    entity_ids: list[Name] = []
+
+
+class EventUpdate(Model):
+    """Only the fields sent change; ``month``/``day`` may be null to clear them."""
+
+    year: Year | None = None
+    month: Small | None = None
+    day: Small | None = None
+    era: Name | None = None
+    title: Name | None = None
+    description: Body | None = None
+    significance: Significance | None = None
+    entity_ids: list[Name] | None = None
+
+
+class CalendarUpdate(Model):
+    name: Name = ""
+    months: list[Name] | None = None
+
+
+# --- Dashboard and writing progress ---------------------------------------------------------
+
+
+class WritingDay(Model):
+    date: str
+    words: float
+
+
+class WritingProgress(Model):
+    daily_goal: float
+    story_targets: dict[str, float]
+    today_words: float
+    streak: int
+    best: float
+    total30: float
+    recent: list[WritingDay]
+
+
+class DailyGoal(Model):
+    goal: float = 0
+
+
+class RecentItem(Model):
+    kind: Literal["entity", "scene"]
+    id: str
+    name: str
+    context: str
+    href: str
+    modified_at: str
+
+
+class LastScene(Model):
+    story_id: str
+    scene_id: str
+    title: str
+    story_title: str
+
+
+class ProjectStats(Model):
+    entity_counts: dict[str, int]
+    total_entities: int
+    story_count: int
+    chapter_count: int
+    scene_count: int
+    word_count: int
+    stories: list[StoryStats]
+    recent: list[RecentItem]
+    last_scene: LastScene | None
+
+
+class GettingStarted(Model):
+    character: bool
+    scene: bool
+    relation: bool
+    mention: bool
+
+
+class Dashboard(Model):
+    stats: ProjectStats
+    progress: WritingProgress
+    getting_started: GettingStarted

@@ -54,10 +54,22 @@ export interface ChapterWithScenes extends Chapter {
   scenes: Scene[];
 }
 
-export interface Plotline {
+export interface PlotBeat {
   id: string;
   title: string;
-  beats: Array<{ id: string | null; title: string; sceneId: string | null }>;
+  sceneId: string | null;
+  sortOrder: number;
+}
+
+export interface Plotline {
+  id: string;
+  storyId: string;
+  title: string;
+  template: string | null;
+  sortOrder: number;
+  createdAt: string;
+  modifiedAt: string;
+  beats: PlotBeat[];
 }
 
 export interface StoryDetail {

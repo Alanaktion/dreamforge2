@@ -2,7 +2,7 @@
   import { page } from '$app/state';
   import { enhance } from '$app/forms'; // only on sections not yet ported (disabled)
   import { goto } from '$app/navigation';
-  import { api, apiForm, ApiError } from '$lib/api';
+  import { api, apiForm, ApiError, type FormResult } from '$lib/api';
   import NotPorted from '$lib/components/NotPorted.svelte';
   import { ENTITY_LABELS } from '$lib/entityFields';
   import {
@@ -19,7 +19,7 @@
     Link2
   } from '@lucide/svelte';
   import { invalidateAll } from '$app/navigation';
-  import type { EntityType } from '$lib/types';
+  import type { EntityType, WritingProgress } from '$lib/types';
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
   import { Label } from '$lib/components/ui/label';
@@ -33,7 +33,17 @@
 
   let selectedType = $state<EntityType>('character');
   let dailyGoal = $state(page.data?.dailyGoal ?? 500);
+  // Follow the loaded goal when it changes (another editor, a reload), unless the field holds
+  // an unsaved edit.
+  let loadedGoal = page.data?.dailyGoal ?? 500;
+  $effect.pre(() => {
+    const next = page.data?.dailyGoal ?? 500;
+    if (next === loadedGoal) return;
+    if (dailyGoal === loadedGoal) dailyGoal = next;
+    loadedGoal = next;
+  });
   let goalSaved = $state(false);
+  let goalError = $state<string | null>(null);
   let newKey = $state('');
   let newLabel = $state('');
   let newFieldType = $state('text');
@@ -209,19 +219,20 @@
     <p class="mb-4 text-sm text-muted-foreground">
       Words per day to aim for. Progress toward it shows on the dashboard.
     </p>
-    <NotPorted />
-    <fieldset disabled>
+    <fieldset disabled={page.data?.role === 'commenter'}>
       <form
-        method="POST"
-        action="?/updateDailyGoal"
-        use:enhance={() => {
-          return async ({ result, update }) => {
-            if (result.type === 'success') {
+        use:apiForm={{
+          path: `/api/projects/${page.params.id}/writing/goal`,
+          method: 'PUT',
+          body: (fields) => ({ goal: Number(fields.dailyGoal) }),
+          onresult: (result: FormResult<WritingProgress>) => {
+            if (result.ok) {
+              goalError = null;
+              dailyGoal = loadedGoal = result.data.dailyGoal;
               goalSaved = true;
               setTimeout(() => (goalSaved = false), 2000);
-            }
-            await update();
-          };
+            } else goalError = result.error;
+          }
         }}
         class="flex items-end gap-2"
       >
@@ -232,13 +243,18 @@
             name="dailyGoal"
             type="number"
             min="0"
+            max="1000000"
             step="50"
+            required
             class="w-40"
             bind:value={dailyGoal}
           />
         </div>
         <Button type="submit">{goalSaved ? 'Saved' : 'Save'}</Button>
       </form>
+      {#if goalError}
+        <p class="mt-2 text-sm text-destructive">{goalError}</p>
+      {/if}
     </fieldset>
   </div>
 

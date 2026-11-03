@@ -1,7 +1,9 @@
 <script lang="ts">
   import { page } from '$app/state';
-  import { enhance } from '$app/forms';
+  import { goto, invalidateAll } from '$app/navigation';
   import { Plus, Trash2, GripVertical } from '@lucide/svelte';
+  import { ApiError } from '$lib/api';
+  import * as plots from '$lib/api/plots';
   import { formatDate } from '$lib/utils';
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
@@ -20,6 +22,43 @@
   let newTitle = $state('');
   let newStory = $state('');
   let selectedTemplate = $state('freeform');
+  let error = $state<string | null>(null);
+  let readOnly = $derived(page.data?.role === 'commenter');
+  let projectId = $derived(page.params.id ?? '');
+  let stories = $derived((page.data?.stories ?? []) as Array<{ id: string; title: string }>);
+  let plotlines = $derived((page.data?.plotlines ?? []) as plots.Plotline[]);
+
+  function message(cause: unknown) {
+    return cause instanceof ApiError ? cause.message : 'Could not reach the server. Try again.';
+  }
+
+  async function create(event: SubmitEvent) {
+    event.preventDefault();
+    if (!newStory) {
+      error = 'Choose a story for the plotline.';
+      return;
+    }
+    const template =
+      selectedTemplate === 'freeform' ? null : (selectedTemplate as plots.PlotTemplate);
+    try {
+      const plotline = await plots.createPlotline(projectId, newTitle, newStory, template);
+      error = null;
+      await goto(`/projects/${projectId}/plots/${plotline.id}`);
+    } catch (cause) {
+      error = message(cause);
+    }
+  }
+
+  async function remove(plotlineId: string) {
+    if (!confirm('Delete this plotline?')) return;
+    try {
+      await plots.deletePlotline(projectId, plotlineId);
+      error = null;
+    } catch (cause) {
+      error = message(cause);
+    }
+    await invalidateAll().catch(() => {});
+  }
 </script>
 
 <svelte:head>
@@ -32,29 +71,21 @@
       <h1 class="text-2xl font-bold">Plotlines</h1>
       <p class="text-sm text-muted-foreground">{page.data?.projectName || 'Project'}</p>
     </div>
-    <Button onclick={() => (showCreate = !showCreate)}>
-      <Plus class="h-4 w-4" />
-      New Plotline
-    </Button>
+    {#if !readOnly}
+      <Button onclick={() => (showCreate = !showCreate)}>
+        <Plus class="h-4 w-4" />
+        New Plotline
+      </Button>
+    {/if}
   </div>
+
+  {#if error}
+    <p class="mb-4 text-sm text-destructive" role="alert">{error}</p>
+  {/if}
 
   {#if showCreate}
     <div class="mb-6 rounded-lg border border-border bg-card p-4">
-      <form
-        method="POST"
-        action="?/create"
-        use:enhance={() => {
-          return async ({ result, update }) => {
-            if (result.type === 'success') {
-              showCreate = false;
-              newTitle = '';
-              newStory = '';
-              await update();
-            }
-          };
-        }}
-        class="space-y-4"
-      >
+      <form onsubmit={create} class="space-y-4">
         <div class="space-y-1.5">
           <Label for="title">Title</Label>
           <Input
@@ -68,12 +99,20 @@
         </div>
         <div class="space-y-1.5">
           <Label for="storyId">Story</Label>
-          <Combobox
-            name="storyId"
-            bind:value={newStory}
-            options={(page.data?.stories || []).map((s: any) => ({ value: s.id, label: s.title }))}
-            placeholder="Select a story..."
-          />
+          {#if stories.length === 0}
+            <p class="text-sm text-muted-foreground">
+              A plotline belongs to a story. <a
+                class="underline"
+                href="/projects/{projectId}/stories?new=1">Start a story</a
+              > first.
+            </p>
+          {:else}
+            <Combobox
+              bind:value={newStory}
+              options={stories.map((s) => ({ value: s.id, label: s.title }))}
+              placeholder="Select a story..."
+            />
+          {/if}
         </div>
         <div class="space-y-1.5">
           <Label for="template">Template</Label>
@@ -88,7 +127,6 @@
               <SelectItem value="snowflake">Snowflake Method</SelectItem>
             </SelectContent>
           </Select>
-          <input type="hidden" name="template" value={selectedTemplate} />
         </div>
         <div class="flex gap-2">
           <Button type="submit">Create</Button>
@@ -101,26 +139,31 @@
   {/if}
 
   <div class="space-y-3">
-    {#if (page.data?.plotlines || []).length === 0}
+    {#if plotlines.length === 0}
       <p class="mx-auto max-w-md py-12 text-center text-muted-foreground">
         No plotlines yet. A plotline lists the beats of your story, from a template like Save the
         Cat or your own, and links each beat to the scene that delivers it.
       </p>
     {/if}
 
-    {#each page.data?.plotlines || [] as plotline (plotline.id)}
-      {@const linked = plotline.beats.filter((b: { sceneId: string | null }) => b.sceneId).length}
-      <div class="rounded-lg border border-border bg-card hover:bg-secondary/50">
+    {#each plotlines as plotline (plotline.id)}
+      {@const linked = plotline.beats.filter((b) => b.sceneId).length}
+      <div
+        class="flex items-center gap-2 rounded-lg border border-border bg-card pr-2 hover:bg-secondary/50"
+      >
         <a
-          href="/projects/{page.params.id}/plots/{plotline.id}"
-          class="flex items-center gap-4 px-4 py-3"
+          href="/projects/{projectId}/plots/{plotline.id}"
+          class="flex min-w-0 flex-1 items-center gap-4 px-4 py-3"
         >
           <GripVertical class="h-4 w-4 text-muted-foreground opacity-40" />
           <div class="flex-1 min-w-0">
             <div class="flex items-center gap-2">
               <span class="font-medium truncate">{plotline.title}</span>
               {#if plotline.template}
-                <Badge variant="secondary">{plotline.template}</Badge>
+                <Badge variant="secondary"
+                  >{plots.PLOT_TEMPLATES[plotline.template as plots.PlotTemplate] ??
+                    plotline.template}</Badge
+                >
               {/if}
             </div>
             <p class="text-xs text-muted-foreground">
@@ -137,19 +180,17 @@
               </div>
             {/if}
           </div>
-          <form method="POST" action="?/delete" onsubmit={() => confirm('Delete this plotline?')}>
-            <input type="hidden" name="plotlineId" value={plotline.id} />
-            <Button
-              type="submit"
-              variant="ghost"
-              size="icon-sm"
-              onclick={(e) => e.stopPropagation()}
-              aria-label="Delete plotline"
-            >
-              <Trash2 class="h-4 w-4 text-destructive" />
-            </Button>
-          </form>
         </a>
+        {#if !readOnly}
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onclick={() => remove(plotline.id)}
+            aria-label="Delete plotline {plotline.title}"
+          >
+            <Trash2 class="h-4 w-4 text-destructive" />
+          </Button>
+        {/if}
       </div>
     {/each}
   </div>

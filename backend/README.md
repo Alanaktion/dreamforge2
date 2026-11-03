@@ -20,7 +20,11 @@ SvelteKit frontend (`npm run dev`).
   bookmarks, comments, trash, images) kept in its folder so the folder can move between
   instances.
 - `services/stories.py`: stories (`story.json`), chapters and scenes on disk in the old layout.
-  `services/writing.py` counts words the way the editor does and keeps `writing-log.json`.
+  `services/writing.py` counts words the way the editor does and keeps `writing-log.json`
+  (daily goal, per-story targets, words per day).
+- `services/plots.py` (`plotlines/<id>.json`) and `services/timelines.py` (`timeline.json`):
+  file-only data, written under the project lock. `services/stats.py` walks the files once for
+  the dashboard.
 - `services/trash.py`: soft delete and restore for entities, stories, chapters, scenes and
   images, and the daily purge of items older than 30 days.
 

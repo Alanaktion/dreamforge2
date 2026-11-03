@@ -6,10 +6,10 @@ SvelteKit single-page frontend and a FastAPI (Python) backend.
 > **Backend rework in progress.** The server is moving from SvelteKit server routes to FastAPI
 > (`backend/`). Sign-in, accounts, instance admin, invites, members, pins, the project list,
 > entities (with custom fields, relations, bookmarks, comments and the command palette),
-> stories (chapters, scenes, summaries, manuscript export, note and scene conversion) and the
-> trash page are on the new backend. Plots, timelines, images, search, the relations page, the
-> project dashboard, backups and import/export are not yet: those pages show "Not available
-> yet". The previous server code is kept under `legacy/routes/` and `src/lib/server/` as the
+> stories (chapters, scenes, summaries, manuscript export, note and scene conversion), plotlines,
+> the timeline, the project dashboard, the daily writing goal and the trash page are on the new
+> backend. Images, search, the relations page, backups and import/export are not yet: those
+> pages show "Not available yet". The previous server code is kept under `legacy/routes/` and `src/lib/server/` as the
 > reference for porting.
 
 ## Quick Start (Docker)

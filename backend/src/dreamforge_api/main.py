@@ -18,7 +18,20 @@ from sqlmodel import Session
 from .config import get_settings
 from .db import UNSAFE_METHODS, get_engine
 from .migrate import migrate
-from .routers import account, admin, auth, entities, health, invites, projects, stories, trash
+from .routers import (
+    account,
+    admin,
+    auth,
+    dashboard,
+    entities,
+    health,
+    invites,
+    plots,
+    projects,
+    stories,
+    timelines,
+    trash,
+)
 from .services.seed import seed
 from .services.sessions import purge_expired_sessions
 from .services.trash import purge_expired as purge_expired_trash
@@ -131,7 +144,20 @@ def create_app() -> FastAPI:
         log.error("Storage error on %s %s: %s", request.method, request.url.path, err)
         return JSONResponse({"detail": str(err)}, status_code=500)
 
-    for module in (health, auth, account, admin, invites, projects, entities, stories, trash):
+    for module in (
+        health,
+        auth,
+        account,
+        admin,
+        invites,
+        projects,
+        entities,
+        stories,
+        plots,
+        timelines,
+        dashboard,
+        trash,
+    ):
         app.include_router(module.router, prefix="/api")
     app.include_router(health.router)  # /healthz, for existing container health checks
 

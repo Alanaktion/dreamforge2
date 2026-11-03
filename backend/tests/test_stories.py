@@ -312,10 +312,8 @@ def test_plotlines_show_on_the_story(admin, env):
     )
     (plots / "other.json").write_text(json.dumps({"id": "o", "storyId": "x", "beats": []}))
     detail = admin.get(story_url(project_id, created["storyId"])).json()
-    assert detail["plotlines"] == [
-        {
-            "id": "p1",
-            "title": "Main",
-            "beats": [{"id": "b1", "title": "Hook", "sceneId": created["sceneId"]}],
-        }
+    [plotline] = detail["plotlines"]
+    assert (plotline["id"], plotline["title"]) == ("p1", "Main")
+    assert plotline["beats"] == [
+        {"id": "b1", "title": "Hook", "sceneId": created["sceneId"], "sortOrder": 0}
     ]

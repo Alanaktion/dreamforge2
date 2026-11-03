@@ -115,7 +115,7 @@ def show_story(project_id: str, story_id: str, auth: CurrentAuth, db: Db):
         "chapters": stories.story_tree(base, story_id),
         "entities": _index(db, project_id),
         "images": images,
-        "plotlines": plots.list_plotlines(base, story_id),
+        "plotlines": plots.list_plotlines(base, project_id, story_id),
         "project_name": project.name,
         "role": role,
     }

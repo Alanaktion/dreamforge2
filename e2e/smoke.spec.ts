@@ -211,6 +211,88 @@ test('stories: autosave, edit conflicts, summaries, export, convert, trash', asy
 
 // Needs the relations page, export and import endpoints, which have not moved to
 // the FastAPI backend yet. Re-enable as they are ported.
+test('dashboard, writing goal, plotlines and the timeline', async ({ page }, testInfo) => {
+  const errors: string[] = [];
+  page.on('pageerror', (cause) => errors.push(cause.message));
+  page.on('dialog', (dialog) => dialog.accept());
+  await signIn(page);
+  await page.goto('/projects');
+  await page.getByRole('button', { name: 'New Project', exact: true }).first().click();
+  const name = `Plots ${testInfo.project.name}`;
+  await page.getByLabel('Project Name').fill(name);
+  await page.getByRole('button', { name: 'Create', exact: true }).click();
+  await expect(page).toHaveURL(/\/projects\/[^/]+$/);
+  const project = new URL(page.url()).pathname;
+  await expect(page.getByRole('heading', { name, exact: true })).toBeVisible();
+
+  // The daily goal saves from settings and shows on the dashboard.
+  await page.goto(`${project}/settings`);
+  await page.getByLabel('Daily word goal').fill('750');
+  await page.getByLabel('Daily word goal').press('Enter');
+  await expect(page.getByRole('button', { name: 'Saved' })).toBeVisible();
+  await page.goto(project);
+  await expect(page.getByText('/ 750 words')).toBeVisible();
+
+  await page.goto(`${project}/stories`);
+  await page.getByRole('button', { name: 'New Story', exact: true }).click();
+  await page.getByLabel('Title', { exact: true }).fill('Plotted story');
+  await page.getByRole('button', { name: 'Create', exact: true }).click();
+  await expect(page).toHaveURL(/\/stories\/[^/]+$/);
+
+  // A plotline from a template, with a beat linked to a scene, renamed, added and deleted.
+  await page.goto(`${project}/plots`);
+  await page.getByRole('button', { name: 'New Plotline' }).click();
+  await page.getByLabel('Title').fill('Main arc');
+  await page.getByRole('combobox').filter({ hasText: 'Select a story' }).click();
+  await page.getByRole('option', { name: 'Plotted story' }).click();
+  await page.locator('#template').click();
+  await page.getByRole('option', { name: 'Save the Cat' }).click();
+  await page.getByRole('button', { name: 'Create', exact: true }).click();
+  await expect(page).toHaveURL(/\/plots\/[^/]+$/);
+  const beats = page.getByRole('list', { name: 'Plot beats' });
+  await expect(beats.getByRole('listitem')).toHaveCount(15);
+  await page
+    .getByLabel('Linked scene for Opening Image')
+    .selectOption({ label: 'Chapter 1 / Untitled' });
+  await expect(page.getByText('1 of 15 linked to a scene')).toBeVisible();
+  await page.getByLabel('New beat title').fill('Epilogue');
+  await page.getByLabel('New beat title').press('Enter');
+  await expect(beats.getByRole('listitem')).toHaveCount(16);
+  await page.getByLabel('Delete Epilogue').click();
+  await expect(beats.getByRole('listitem')).toHaveCount(15);
+  await page.getByLabel('Plotline title').fill('Main arc, revised');
+  await page.getByRole('button', { name: 'Save' }).click();
+  await page.goto(`${project}/plots`);
+  await expect(page.getByText('Main arc, revised')).toBeVisible();
+  await expect(page.getByText('15 beats · 1 linked to scenes')).toBeVisible();
+
+  // Timeline: a custom calendar, an event added, edited and deleted.
+  await page.goto(`${project}/timelines`);
+  await page.getByRole('button', { name: 'Calendar' }).click();
+  await page.getByLabel('Calendar Name').fill('Reckoning');
+  await page.getByLabel('Month Names (comma-separated)').fill('Frost, Thaw');
+  await page.getByRole('button', { name: 'Save Calendar' }).click();
+  await expect(page.getByLabel('Calendar Name')).toBeHidden();
+  await page.getByRole('button', { name: 'Add Event' }).click();
+  await page.locator('#new-year').fill('412');
+  await page.locator('#new-day').fill('3');
+  await page.locator('#new-title').fill('The long winter');
+  await page.getByRole('button', { name: 'Add Event' }).last().click();
+  await expect(page.locator('p', { hasText: /^412 CE$/ })).toBeVisible();
+  await page.getByRole('button', { name: 'Edit event The long winter' }).click();
+  await page.locator('#edit-title').fill('The longest winter');
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'The longest winter', exact: true })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'The longest winter', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Delete event The longest winter' }).click();
+  await expect(page.getByRole('button', { name: 'The longest winter', exact: true })).toHaveCount(
+    0
+  );
+
+  expect(errors).toEqual([]);
+});
+
 test.fixme('production login, awkward entities, autosave, relations and project ZIP restore', async ({
   page
 }, testInfo) => {
