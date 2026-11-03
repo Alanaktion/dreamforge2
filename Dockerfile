@@ -2,8 +2,7 @@
 FROM node:22-alpine AS web
 WORKDIR /app
 COPY package.json package-lock.json ./
-# --ignore-scripts: the SPA build needs no native modules. better-sqlite3 (used only by the
-# legacy server code's tests) would otherwise need a compiler toolchain here.
+# --ignore-scripts: the SPA build runs no package install scripts.
 RUN npm ci --ignore-scripts
 COPY . .
 RUN npx svelte-kit sync && npm run build

@@ -61,11 +61,5 @@ export default ts.config(
       // own types do not describe the callback forms this code passes.
       '@typescript-eslint/no-explicit-any': 'warn'
     }
-  },
-  {
-    // vi.hoisted() runs before ESM imports are evaluated, so require() is the only
-    // way to load better-sqlite3 inside it.
-    files: ['**/__tests__/**'],
-    rules: { '@typescript-eslint/no-require-imports': 'off' }
   }
 );

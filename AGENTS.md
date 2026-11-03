@@ -3,52 +3,46 @@
 ## Project Overview
 
 Open-source, self-hosted web app for fiction worldbuilding and writing.
-Markdown-first: all content stored as Markdown files on disk; SQLite is a query index synced on startup + file watcher (chokidar).
+Markdown-first: all content stored as Markdown files on disk; SQLite is a query index rebuilt from disk when a project's shell loads.
+
+The app has two parts: a SvelteKit single-page frontend (`src/`) and a FastAPI backend (`backend/`). In production FastAPI serves both the API (`/api/...`) and the built SPA.
 
 ## Tech Stack
 
-| Layer           | Choice                                                   |
-| --------------- | -------------------------------------------------------- |
-| Framework       | SvelteKit 2 + Svelte 5 (runes mode)                      |
-| Language        | TypeScript (strict)                                      |
-| Styling         | Tailwind CSS v4 + shadcn-svelte theme vars               |
-| Database        | SQLite via better-sqlite3 + Drizzle ORM                  |
-| Editor          | Tiptap 3 / ProseMirror via svelte-tiptap                 |
-| Auth            | Custom (scrypt hashing, session-based, httpOnly cookies) |
-| Package manager | npm (NOT pnpm or bun)                                    |
-| Deployment      | Docker (multi-stage) + docker-compose                    |
-| Adapter         | @sveltejs/adapter-node                                   |
+| Layer           | Choice                                                     |
+| --------------- | ---------------------------------------------------------- |
+| Frontend        | SvelteKit 2 + Svelte 5 (runes mode), adapter-static SPA    |
+| Language        | TypeScript (strict) in `src/`, Python 3.12 in `backend/`   |
+| Styling         | Tailwind CSS v4 + shadcn-svelte theme vars                 |
+| Backend         | FastAPI + SQLModel on SQLite (WAL)                         |
+| Editor          | Tiptap 3 / ProseMirror via svelte-tiptap                   |
+| Auth            | Custom (scrypt hashing, session-based, httpOnly cookies)   |
+| Package manager | npm for the frontend (NOT pnpm or bun), uv for the backend |
+| Deployment      | Docker (multi-stage) + docker-compose                      |
 
 ## Project Structure
 
 ```
 src/
   lib/
-    components/     — Editor.svelte (Tiptap), Sidebar.svelte (nav/bookmarks)
-    server/          — All server-only code (db, auth, entities, markdown, stories, etc.)
-      __tests__/     — Server unit tests (vitest)
+    api/             — Typed API client: api(), load(), apiUpload() and per-area helpers
+    components/      — Editor.svelte (Tiptap), Sidebar.svelte (nav/bookmarks)
     stores/          — Svelte runes stores (theme.svelte.ts, zenMode.svelte.ts)
     types/           — TypeScript interfaces (EntityType, Story, Scene, etc.)
     utils/           — Shared helpers (cn, generateId, slugify, formatDate)
-      __tests__/     — Util unit tests
     entityFields.ts  — Per-entity-type field definitions
-  routes/
-    login/register/logout — Auth pages
-    projects/              — Project list + CRUD
-    projects/[id]/         — Dashboard, per-project pages
-    projects/[id]/[type]/  — Generic entity routes (characters, locations, etc.)
-    projects/[id]/stories/ — Story/chapter/scene hierarchy
-    projects/[id]/plots/     — Plotlines and beat tracking
-    projects/[id]/timelines/ — World timeline with custom calendars
-    projects/[id]/relations/ — Relation graph (cytoscape.js)
-    projects/[id]/search/    — Global search
-    projects/[id]/settings/  — Project settings, custom fields, members
-    projects/[id]/images/    — Project image library
-    projects/[id]/trash/     — Soft-deleted entities (30-day TTL)
-    projects/[id]/export/    — ZIP export (archiver v8)
-    api/projects/[id]/images/ — Image upload + serving
-  app.css            — Tailwind + shadcn-svelte theme variables
-  hooks.server.ts    — Auth session check on every request
+  routes/            — Pages; each loads its data in +page.ts through $lib/api
+backend/
+  src/dreamforge_api/
+    main.py          — App factory, middleware, background tasks (trash purge, backups)
+    migrate.py       — Hand-written schema migrations (the schema's owner)
+    models.py        — SQLModel tables mirroring that schema
+    schemas.py       — Request/response models (camelCase on the wire)
+    routers/         — One module per API area
+    services/        — Logic shared by routers (entities, stories, archives, ...)
+    cli.py           — `dreamforge migrate | user add | user reset-password`
+  tests/             — pytest suite
+e2e/                 — Playwright smoke tests against the production build
 ```
 
 ## Entity Types (7)
@@ -59,8 +53,8 @@ Entity fields are declared declaratively in `src/lib/entityFields.ts` — routes
 
 ## Data Architecture
 
-- **Filesystem is the source of truth.** Each entity is a `.md` file with YAML frontmatter.
-- **SQLite is a query index.** Synced on startup (`migrate.ts` → read all files → upsert into `entities` table) and kept in sync via chokidar file watcher (`watcher.ts`).
+- **Filesystem is the source of truth.** Each entity is a `.md` file with YAML frontmatter (the YAML 1.2 core schema; existing files must round-trip byte for byte).
+- **SQLite is a query index** plus the tables that only live in the database (users, sessions, members). Rows that belong to a project (fields, bookmarks, comments, trash, images) are mirrored to the project's `metadata.json`.
 - Project data lives at a configurable path (default `data/projects/{projectId}/`).
 
 ## Key Conventions
@@ -75,13 +69,12 @@ Entity fields are declared declaratively in `src/lib/entityFields.ts` — routes
 - Type imports should use `type` keyword: `import type { Foo } from '...'`
 - Do not add explanatory code summary after edits
 
-### Server code
+### Backend
 
-- Server-only logic lives in `src/lib/server/` — never import into `+page.svelte` or `+layout.svelte`
-- Route loaders use `+page.server.ts` and `+layout.server.ts`
-- Database calls go through Drizzle ORM; raw SQL is rare
-- Auth: session cookie checked in `hooks.server.ts`, user available as `event.locals.user`
-- Images are stored on disk under `<project>/images/` and streamed by `api/projects/[id]/images/[file]`
+- Pages load data in `+page.ts` with `load()` from `$lib/api` and refresh with `invalidateAll()`; there are no `+page.server.ts` files
+- Unsafe HTTP methods get a write (BEGIN IMMEDIATE) session. Take the SQLite write lock before the per-project `project_lock`, never the other way round
+- Upload endpoints check access and roll back before streaming the body, so a slow upload does not hold the write lock
+- Schema changes go in `migrate.py` as a new numbered step; never use `create_all`
 
 ### Components
 
@@ -91,22 +84,17 @@ Entity fields are declared declaratively in `src/lib/entityFields.ts` — routes
 
 ### Testing
 
-- Framework: vitest v4
-- Test files co-located in `__tests__/` directories next to the code they test
-- Test files matching pattern: `src/**/*.test.ts`
-- Environment: `node` (not jsdom) — no browser/component tests yet
-- Globals enabled: `describe`, `it`, `expect` are available without imports
-- Commands:
-  - `npm test` — run all tests once
-  - `npm run test:watch` — watch mode
-  - `npx vitest run src/lib/server/__tests__/markdown.test.ts` — single file
+- Frontend: vitest (`src/**/*.test.ts`, node environment, globals enabled). `npm test`, `npm run test:watch`
+- Backend: pytest. `npm run test:api` (or `uv run pytest` in `backend/`)
+- End to end: `npm run build`, then `npm run test:e2e`
 
 ### Build & Check
 
-- `npm run build` — full production build (svelte-kit sync + vite build)
+- `npm run build` — build the SPA into `build/`
 - `npm run check` — type-check + svelte-check (run after any type change)
-- `npm run lint` — prettier + eslint
+- `npm run lint` — prettier + eslint; `npm run lint:api` — ruff
 - `npm run format` — prettier auto-format
+- `npm run dev` — Vite (5173, proxying `/api`) and uvicorn with reload (8000)
 
 ## What NOT To Do
 
@@ -114,7 +102,6 @@ Entity fields are declared declaratively in `src/lib/entityFields.ts` — routes
 - Do NOT create documentation files (`.md` READMEs) unless explicitly requested — AGENTS.md is an exception
 - Do NOT change package manager (npm only)
 - Do NOT add new dependencies without checking if existing ones can do the job
-- archiver is on v8, which removed the default function export — import the named `ZipArchive` export instead
 - Do NOT suppress `a11y_` warnings — fix them. `npm run check` and the build report them; keep both at zero
 
 ## Docker
@@ -134,14 +121,14 @@ docker compose -f docker-compose.dev.yml up --build
 ## Environment
 
 Copy `.env.example` to `.env` — see that file for all variables.
-Key: `PUBLIC_ALLOW_REGISTRATION` (default true — set to `false` to disable signups), `DATABASE_PATH`, `DATA_DIR`.
+Key: `PUBLIC_ALLOW_REGISTRATION`, `DATABASE_PATH`, `DATA_DIR`, `ORIGIN`.
 
 ## Auth System
 
-- Custom implementation in `src/lib/server/password.ts` using Node's `crypto.scrypt`
+- Passwords use scrypt (`backend/src/dreamforge_api/passwords.py`), compatible with hashes from the earlier Node server
 - Sessions stored in SQLite `sessions` table
-- Admin user seeded automatically (email/password from env) with `users.is_admin`; admins manage users and registration at `/admin` (`src/lib/server/accounts.ts`)
+- Admin user seeded automatically (email/password from env) with `users.is_admin`; admins manage users and registration at `/admin`
 - Registration toggle via `PUBLIC_ALLOW_REGISTRATION`, overridable at runtime from `/admin` (stored in `instance_settings`)
-- Project invite links (`src/lib/server/invites.ts`) let people join a project for 7 days, even when registration is closed
+- Project invite links let people join a project for 7 days, even when registration is closed
 - Pins are per user (`project_pins`); `projects.pinned` is legacy and no longer read
 - Logout deletes session from DB and clears cookie

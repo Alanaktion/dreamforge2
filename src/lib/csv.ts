@@ -1,4 +1,4 @@
-// Reading CSV files in the browser for the CSV import page (moved from src/lib/server/csv.ts).
+// Reading CSV files in the browser for the CSV import page.
 // Quoted fields, doubled quotes, and \n, \r\n or \r line endings are handled.
 
 export function parseCSV(text: string): string[][] {

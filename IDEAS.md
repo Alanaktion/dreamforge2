@@ -24,12 +24,12 @@ The app is strong at storing structured data but has few tools for _generating_ 
 ### Quick capture
 
 - Global "Quick idea" shortcut (in `CommandPalette.svelte` and `KeyboardShortcuts.svelte`) that creates a note with one line of text and no navigation
-- Inbox view for unsorted quick notes with "convert to character / location / ..." (conversion already exists note → scene; generalize it in `src/lib/server/conversion.ts`)
+- Inbox view for unsorted quick notes with "convert to character / location / ..." (conversion already exists note → scene; generalize it in `backend/src/dreamforge_api/services/conversion.py`)
 - Mention an unknown name with `@` in the editor → offer "create character named X" as a stub entity with `status: draft`
 
 ### Entity templates for all types
 
-**Files:** `src/lib/server/templates.ts`, `src/routes/projects/[id]/[type]/+page.server.ts`
+**Files:** `backend/src/dreamforge_api/services/starter.py`, `src/routes/projects/[id]/[type]/+page.ts`
 
 - Templates currently only apply to notes (`templates: entityType === 'note' ? getNoteTemplates() : []`). Offer body templates for every type (character profile, location description already exist but aren't selectable for characters/locations)
 - User-defined templates stored as Markdown files in `project/templates/<type>/`
@@ -45,7 +45,7 @@ The app is strong at storing structured data but has few tools for _generating_ 
 
 ### Scenes use free-text names instead of entity references
 
-**Files:** `src/lib/types/index.ts` (`Scene`), `src/lib/server/backlinks.ts`, `src/routes/projects/[id]/stories/[storyId]/+page.svelte`
+**Files:** `src/lib/types/index.ts` (`Scene`), `backend/src/dreamforge_api/services/backlinks.py`, `src/routes/projects/[id]/stories/[storyId]/+page.svelte`
 
 - `narrator`, `place` are plain strings; backlinks match them by `entity.name`, so renaming an entity silently breaks the link
 - `participants` accepts both IDs and names
@@ -53,12 +53,12 @@ The app is strong at storing structured data but has few tools for _generating_ 
 
 ### Scene time is disconnected from the world calendar
 
-- `Scene.time` is free text, while the timeline has a structured calendar (`src/lib/server/timelines.ts`)
+- `Scene.time` is free text, while the timeline has a structured calendar (`backend/src/dreamforge_api/services/timelines.py`)
 - Allow a scene to reference a timeline date or event; show scenes on the timeline and enable "story order vs. chronological order" views
 
 ### Timelines
 
-**Files:** `src/lib/server/timelines.ts`, `src/routes/projects/[id]/timelines/`
+**Files:** `backend/src/dreamforge_api/services/timelines.py`, `src/routes/projects/[id]/timelines/`
 
 - Only one timeline per project; add multiple timelines/lanes (per region, per faction, per story)
 - Per-entity filtering exists in data (`entityIds`) but entity pages don't show "Events involving this entity" — add to the entity page and to backlinks
@@ -69,7 +69,7 @@ The app is strong at storing structured data but has few tools for _generating_ 
 
 ### Relations
 
-**Files:** `src/lib/relationTypes.ts`, `src/lib/server/relations.ts`, `src/lib/components/RelationGraph.svelte`
+**Files:** `src/lib/relationTypes.ts`, `backend/src/dreamforge_api/services/relations.py`, `src/lib/components/RelationGraph.svelte`
 
 - Relation types are a fixed hardcoded list; allow per-project custom relation types (with color and dash style in the graph)
 - No inverse pairs: `parent` ↔ `child`, `mentor` ↔ `student`, `leader_of` ↔ `led_by` should display correctly from both sides
@@ -80,7 +80,7 @@ The app is strong at storing structured data but has few tools for _generating_ 
 
 ### Entity fields
 
-**Files:** `src/lib/entityFields.ts`, `src/lib/server/customFields.ts`
+**Files:** `src/lib/entityFields.ts`, `backend/src/dreamforge_api/services/custom_fields.py`
 
 - Built-in character fields are thin (no age, appearance, goals, fears, flaws, voice/speech, arc). Add a richer default set, grouped into collapsible sections
 - Custom fields lack a `select` / `multiselect` type with predefined options (e.g. alignment, social class) and a `rating` / slider type (e.g. "Bravery 1–10")
@@ -96,7 +96,7 @@ The app is strong at storing structured data but has few tools for _generating_ 
 
 ### Plot structure
 
-**Files:** `src/lib/server/plotTemplates.ts`, `src/lib/server/plots.ts`
+**Files:** `backend/src/dreamforge_api/services/plots.py`
 
 - Only three hardcoded templates; add Three-Act, Seven-Point, Kishōtenketsu, Freytag's Pyramid, Fichtean Curve, and user-defined templates
 - Scene `plotThreads` track setup/payoff but nothing reports unresolved setups; add a "dangling threads" report per story
@@ -122,7 +122,7 @@ The app is strong at storing structured data but has few tools for _generating_ 
 
 ## Custom Entity Types
 
-**Files:** `src/lib/server/customTypes.ts`, `src/lib/components/DynamicEntityForm.svelte`
+**Files:** `backend/src/dreamforge_api/services/custom_types.py`, `src/lib/components/DynamicEntityForm.svelte`
 
 `EntityType` is a closed union, and `ENTITY_DIRS`, `ENTITY_PATTERNS` (watcher), `ENTITY_LABELS`, and `ENTITY_PLURAL` are all hardcoded. Useful types missing today: religion, magic system, language, event, faction, deity, vehicle, creature, technology.
 
@@ -155,7 +155,7 @@ Stored as JSON in `templates/entity-schemas/`:
 
 ### Maps
 
-- Upload map images (world, region, city, dungeon) — can reuse the image library in `src/lib/server/images.ts`
+- Upload map images (world, region, city, dungeon) — can reuse the image library in `backend/src/dreamforge_api/services/images.py`
 - Pin entities to map locations (x, y coordinates); clicking a pin opens the entity
 - Link a map to a location entity so nested maps drill down (world → city map)
 - Multiple layers (terrain, political, climate), region polygons, distance ruler with custom scale
@@ -203,7 +203,7 @@ Stored as JSON in `templates/entity-schemas/`:
 
 ## Import from Other Tools
 
-**Files:** `src/lib/server/importers/`
+**Files:** `backend/src/dreamforge_api/services/importers/`
 
 Per-type CSV import already exists (`src/routes/projects/[id]/[type]/import-csv/`).
 
@@ -231,7 +231,7 @@ Per-type CSV import already exists (`src/routes/projects/[id]/[type]/import-csv/
 
 ## Cross-Project Import / Duplicate
 
-**Files:** `src/lib/server/importProject.ts`, `src/routes/projects/[id]/import/`
+**Files:** `backend/src/dreamforge_api/services/import_project.py`, `src/routes/projects/[id]/import/`
 
 ### Import entities from another project
 
@@ -247,7 +247,7 @@ Per-type CSV import already exists (`src/routes/projects/[id]/[type]/import-csv/
 
 ## Real-Time Collaboration
 
-**Files:** `src/lib/server/collab.ts`, `src/lib/components/CollabCursor.svelte`
+**Files:** `backend/src/dreamforge_api/services/collab.py`, `src/lib/components/CollabCursor.svelte`
 
 Members and comments exist; editing is still last-write-wins.
 
@@ -272,7 +272,7 @@ Members and comments exist; editing is still last-write-wins.
 
 ## Share Projects / Stories Online
 
-**Files:** `src/routes/share/`, `src/lib/server/sharing.ts`
+**Files:** `src/routes/share/`, `backend/src/dreamforge_api/services/sharing.py`
 
 ### Optional self-hosted sharing
 
