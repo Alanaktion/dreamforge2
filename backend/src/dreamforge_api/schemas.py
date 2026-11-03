@@ -152,7 +152,6 @@ class ProjectOut(Model):
 class Preset(Model):
     label: str
     description: str
-    available: bool
 
 
 class ProjectList(Model):
@@ -841,6 +840,47 @@ class SearchPage(Model):
     results: list[SearchResult]
     project_name: str
     role: str
+
+
+# --- CSV, ZIP export/import and backups -------------------------------------------------------
+
+
+class CsvRow(Model):
+    id: Text = ""
+    name: Name = ""
+    body: Body | None = None
+    tags: list[Text] | None = None
+    status: Text = ""
+    fields: dict[Text, FieldValue] = {}
+
+
+class CsvImport(Model):
+    rows: Annotated[list[CsvRow], Field(max_length=5000)]
+
+
+class CsvImportResult(Model):
+    created: int
+    updated: int
+    errors: list[str]
+
+
+class BackupOut(Model):
+    name: str
+    size: int
+    created_at: str
+
+
+class BackupList(Model):
+    backups: list[BackupOut]
+    enabled: bool
+
+
+class BackupSettings(Model):
+    enabled: bool
+
+
+class BackupCreated(Model):
+    name: str
 
 
 EntityDetail.model_rebuild()

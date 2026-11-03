@@ -42,6 +42,22 @@ export async function api<T = unknown>(path: string, options: ApiOptions = {}): 
   return payload as T;
 }
 
+/** Sends a file's raw bytes as the request body (uploads are not JSON). */
+export async function apiUpload<T>(path: string, file: Blob, failure: string): Promise<T> {
+  const response = await fetch(path, {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'content-type': 'application/octet-stream' },
+    body: file
+  });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    const value = (payload as { detail?: unknown } | null)?.detail;
+    throw new ApiError(response.status, typeof value === 'string' ? value : failure);
+  }
+  return payload as T;
+}
+
 /** For loads: turn API failures into SvelteKit errors (rendered by +error.svelte). */
 export async function load<T>(path: string, f: Fetch): Promise<T> {
   try {
@@ -50,11 +66,6 @@ export async function load<T>(path: string, f: Fetch): Promise<T> {
     if (cause instanceof ApiError) error(cause.status, cause.message);
     throw cause;
   }
-}
-
-/** For pages whose server code has not moved to the API yet. */
-export function notPorted(): never {
-  error(501, 'This page has not been moved to the new backend yet.');
 }
 
 /**

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { projectExportUrl } from '$lib/api/transfer';
   import { afterNavigate, goto } from '$app/navigation';
   import { api } from '$lib/api';
   import { page } from '$app/state';
@@ -224,7 +225,7 @@
             <Sidebar.MenuItem>
               <Sidebar.MenuButton tooltipContent="Export">
                 {#snippet child({ props })}
-                  <a href="{base}/export" download {...props}>
+                  <a href={projectExportUrl(page.params?.id ?? '')} download {...props}>
                     <Download class="h-4 w-4" />
                     <span>Export</span>
                   </a>

@@ -1,3 +1,5 @@
+from collections.abc import Callable
+
 from fastapi import APIRouter, HTTPException
 
 from ..db import Db
@@ -19,7 +21,7 @@ from ..schemas import (
     ProjectShell,
     ProjectUpdate,
 )
-from ..services import invites, members
+from ..services import invites, members, starter
 from ..services import projects as service
 from .entities import reindex
 
@@ -43,11 +45,18 @@ def _owner(db: Db, project_id: str, auth: Auth, message: str) -> Project:
 
 @router.get("", response_model=ProjectList)
 def index(auth: CurrentAuth, db: Db):
-    presets = {
-        key: {**preset, "available": key in service.PORTED_PRESETS}
-        for key, preset in service.PROJECT_PRESETS.items()
-    }
-    return {**service.list_projects(db, auth.user.id), "presets": presets}
+    return {**service.list_projects(db, auth.user.id), "presets": service.PROJECT_PRESETS}
+
+
+def _seeded(db: Db, project: Project, seed: Callable[[], None]) -> dict[str, str]:
+    """Run a starter; a project it fails part way through is deleted, not left half made."""
+    try:
+        seed()
+    except Exception:
+        db.rollback()
+        service.delete_project(db, project)
+        raise
+    return {"id": project.id}
 
 
 @router.post("", response_model=Created, status_code=201)
@@ -57,10 +66,16 @@ def create(body: ProjectCreate, auth: CurrentAuth, db: Db):
         raise HTTPException(400, "Name is required")
     if body.preset not in service.PROJECT_PRESETS:
         raise HTTPException(400, "Unknown starter")
-    if body.preset not in service.PORTED_PRESETS:
-        raise HTTPException(501, "This starter is not available yet. Start with Blank.")
     project = service.create_project(db, auth.user.id, name, body.description.strip())
-    return {"id": project.id}
+    return _seeded(db, project, lambda: starter.apply_preset(db, project, body.preset))
+
+
+@router.post("/sample", response_model=Created, status_code=201)
+def create_sample(auth: CurrentAuth, db: Db):
+    project = service.create_project(
+        db, auth.user.id, starter.SAMPLE_WORLD_NAME, starter.SAMPLE_WORLD_DESCRIPTION
+    )
+    return _seeded(db, project, lambda: starter.create_sample_world(db, project))
 
 
 @router.get("/{project_id}", response_model=ProjectAccess)

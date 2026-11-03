@@ -1,9 +1,8 @@
 <script lang="ts">
   import { page } from '$app/state';
-  import { enhance } from '$app/forms'; // only on sections not yet ported (disabled)
   import { goto } from '$app/navigation';
   import { api, apiForm, ApiError, type FormResult } from '$lib/api';
-  import NotPorted from '$lib/components/NotPorted.svelte';
+  import { backupUrl, backUpNow, setBackupsEnabled } from '$lib/api/transfer';
   import { ENTITY_LABELS } from '$lib/entityFields';
   import {
     ArrowLeft,
@@ -137,6 +136,34 @@
   let deleteError = $state<string | null>(null);
 
   let inviteError = $state<string | null>(null);
+
+  let backingUp = $state(false);
+  let backupError = $state<string | null>(null);
+
+  async function backupNow() {
+    backupError = null;
+    backingUp = true;
+    try {
+      await backUpNow(page.params.id ?? '');
+      await invalidateAll();
+    } catch (cause) {
+      backupError = cause instanceof ApiError ? cause.message : 'Could not reach the server.';
+    } finally {
+      backingUp = false;
+    }
+  }
+
+  async function toggleBackups(input: HTMLInputElement) {
+    const enabled = input.checked;
+    backupError = null;
+    try {
+      await setBackupsEnabled(page.params.id ?? '', enabled);
+    } catch (cause) {
+      input.checked = !enabled; // the setting did not change; show it as it is
+      backupError = cause instanceof ApiError ? cause.message : 'Could not reach the server.';
+    }
+    await invalidateAll();
+  }
 
   async function call(path: string, method: 'POST' | 'PATCH' | 'DELETE', body: unknown = {}) {
     memberError = null;
@@ -627,23 +654,29 @@
         <Archive class="h-4 w-4" />
         Backups
       </h2>
-      <NotPorted />
-      <fieldset disabled class="flex flex-wrap items-center gap-3">
-        <form method="POST" action="?/backup" use:enhance>
-          <Button type="submit">Back up now</Button>
-        </form>
-        <form method="POST" action="?/backupSettings" use:enhance class="flex items-center gap-3">
-          <label class="flex items-center gap-2 text-sm"
-            ><input type="checkbox" name="enabled" checked={page.data?.backupEnabled} /> Automatic backups</label
-          >
-          <Button type="submit" variant="outline">Save backup settings</Button>
-        </form>
-      </fieldset>
+      <p class="mb-3 text-sm text-muted-foreground">
+        Automatic backups save a ZIP of the project on a schedule set by the server. Import a backup
+        on the projects page to restore it as a new project.
+      </p>
+      <div class="flex flex-wrap items-center gap-3">
+        <Button onclick={backupNow} disabled={backingUp}>
+          {backingUp ? 'Backing up…' : 'Back up now'}
+        </Button>
+        <label class="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={page.data?.backupEnabled}
+            onchange={(e) => toggleBackups(e.currentTarget as HTMLInputElement)}
+          />
+          Automatic backups
+        </label>
+      </div>
+      {#if backupError}<p role="alert" class="mt-2 text-sm text-destructive">{backupError}</p>{/if}
       <ul class="mt-3 space-y-1 text-sm">
         {#each page.data?.backups ?? [] as backup (backup.name)}
           <li>
-            <a class="underline" href={`/projects/${page.params.id}/backups/${backup.name}`}
-              >{backup.createdAt}</a
+            <a class="underline" href={backupUrl(page.params.id ?? '', backup.name)} download
+              >{new Date(backup.createdAt).toLocaleString()}</a
             >
             <span class="text-muted-foreground">({Math.round(backup.size / 1024)} KB)</span>
           </li>

@@ -1,5 +1,5 @@
 // Project images over the API (backend/src/dreamforge_api/routers/images.py).
-import { api, ApiError } from '$lib/api';
+import { api, apiUpload } from '$lib/api';
 
 export interface LinkedEntity {
   id: string;
@@ -27,22 +27,12 @@ const imagePath = (projectId: string, imageId: string) =>
   `${imagesPath(projectId)}/${encodeURIComponent(imageId)}`;
 
 /** Uploads one file: its bytes as the body, its name in the query string. */
-export async function uploadImage(projectId: string, file: File): Promise<ProjectImage> {
-  const response = await fetch(`${imagesPath(projectId)}?name=${encodeURIComponent(file.name)}`, {
-    method: 'POST',
-    credentials: 'same-origin',
-    headers: { 'content-type': 'application/octet-stream' },
-    body: file
-  });
-  const payload = await response.json().catch(() => null);
-  if (!response.ok) {
-    const detail = (payload as { detail?: unknown } | null)?.detail;
-    throw new ApiError(
-      response.status,
-      typeof detail === 'string' ? detail : `Could not upload ${file.name}`
-    );
-  }
-  return payload as ProjectImage;
+export function uploadImage(projectId: string, file: File): Promise<ProjectImage> {
+  return apiUpload<ProjectImage>(
+    `${imagesPath(projectId)}?name=${encodeURIComponent(file.name)}`,
+    file,
+    `Could not upload ${file.name}`
+  );
 }
 
 export function updateImage(

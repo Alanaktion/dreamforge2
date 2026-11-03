@@ -30,6 +30,12 @@ SvelteKit frontend (`npm run dev`).
   searches the Markdown files directly.
 - `services/trash.py`: soft delete and restore for entities, stories, chapters, scenes and
   images, and the daily purge of items older than 30 days.
+- `services/archives.py`: the project ZIP (export, backups) and restoring a ZIP as a new project,
+  with limits on names, links, entry count and unpacked size. `main.py` checks every minute for
+  projects whose newest backup is older than `BACKUP_INTERVAL`.
+- `services/csv_io.py`: CSV export of one entity type, and the import of rows the browser has
+  already mapped to fields. `services/starter.py`: the Novel, Series and Campaign starters and
+  the sample world.
 
 ```bash
 uv sync

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { csvUrl } from '$lib/api/transfer';
   import { page } from '$app/state';
   import { untrack } from 'svelte';
   import { goto, invalidateAll } from '$app/navigation';
@@ -99,7 +100,7 @@
 
   function downloadCsv() {
     const route = entityTypeToRoute(page.data?.entityType || 'character');
-    window.open(`/projects/${page.params.id}/${route}/export-csv`, '_blank');
+    window.location.assign(csvUrl(page.params.id ?? '', route));
   }
 
   let allEntities = $state<any[]>(page.data?.entities || []);

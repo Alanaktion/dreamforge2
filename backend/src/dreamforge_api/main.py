@@ -32,8 +32,10 @@ from .routers import (
     search,
     stories,
     timelines,
+    transfer,
     trash,
 )
+from .services.archives import run_due_backups
 from .services.seed import seed
 from .services.sessions import purge_expired_sessions
 from .services.trash import purge_expired as purge_expired_trash
@@ -78,14 +80,27 @@ async def _purge_daily() -> None:
         await asyncio.to_thread(_purge_trash)
 
 
+async def _backup_loop() -> None:
+    """Automatic backups: every minute, back up the projects whose newest backup is older
+    than BACKUP_INTERVAL. The first pass waits a minute, so startup stays quick."""
+    while True:
+        await asyncio.sleep(60)
+        try:
+            await asyncio.to_thread(run_due_backups)
+        except Exception:  # keep the loop alive; each project's errors are logged already
+            log.exception("Backup pass failed")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     startup()
-    task = asyncio.create_task(_purge_daily())
+    tasks = [asyncio.create_task(_purge_daily()), asyncio.create_task(_backup_loop())]
     yield
-    task.cancel()
-    with contextlib.suppress(asyncio.CancelledError):
-        await task
+    for task in tasks:
+        task.cancel()
+    for task in tasks:
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
 
 
 def _same_origin(request: Request) -> bool:
@@ -161,6 +176,7 @@ def create_app() -> FastAPI:
         images,
         search,
         trash,
+        transfer,
     ):
         app.include_router(module.router, prefix="/api")
     app.include_router(health.router)  # /healthz, for existing container health checks

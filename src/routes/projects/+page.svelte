@@ -11,7 +11,8 @@
     FolderOpen,
     BookOpen,
     Users,
-    Map
+    Map,
+    Sparkles
   } from '@lucide/svelte';
   import { cn, formatDate } from '$lib/utils';
   import { Button } from '$lib/components/ui/button';
@@ -19,6 +20,7 @@
   import { Label } from '$lib/components/ui/label';
   import { Textarea } from '$lib/components/ui/textarea';
   import { formatWordCount } from '$lib/utils/wordCount';
+  import { importProjectZip } from '$lib/api/transfer';
 
   let showCreate = $state(false);
   let name = $state('');
@@ -26,6 +28,46 @@
   let creating = $state(false);
   let presetChoice = $state('blank');
   let error = $state('');
+  let busy = $state(false);
+
+  function message(cause: unknown) {
+    return cause instanceof ApiError ? cause.message : 'Could not reach the server.';
+  }
+
+  async function createSample() {
+    error = '';
+    busy = true;
+    try {
+      const { id } = await api<{ id: string }>('/api/projects/sample', { method: 'POST' });
+      await goto(`/projects/${id}`);
+    } catch (cause) {
+      error = message(cause);
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function importZip(event: SubmitEvent) {
+    event.preventDefault();
+    const input = (event.currentTarget as HTMLFormElement).elements.namedItem(
+      'archive'
+    ) as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    error = '';
+    if (file.size > 20 * 1024 * 1024) {
+      error = 'Choose a ZIP file up to 20 MB';
+      return;
+    }
+    busy = true;
+    try {
+      await goto(`/projects/${await importProjectZip(file)}`);
+    } catch (cause) {
+      error = message(cause);
+    } finally {
+      busy = false;
+    }
+  }
 
   async function togglePin(projectId: string) {
     error = '';
@@ -33,7 +75,7 @@
       await api(`/api/projects/${projectId}/pin`, { method: 'POST' });
       await invalidateAll();
     } catch (cause) {
-      error = cause instanceof ApiError ? cause.message : 'Could not reach the server.';
+      error = message(cause);
     }
   }
 </script>
@@ -154,20 +196,11 @@
           <div class="grid gap-2 sm:grid-cols-2">
             {#each Object.entries((page.data?.presets ?? {}) as Record<string, Preset>) as [value, preset] (value)}
               <label
-                class="flex cursor-pointer gap-2 rounded-lg border border-border p-3 text-sm has-[:checked]:border-primary has-[:checked]:bg-secondary has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-60"
+                class="flex cursor-pointer gap-2 rounded-lg border border-border p-3 text-sm has-[:checked]:border-primary has-[:checked]:bg-secondary"
               >
-                <input
-                  type="radio"
-                  name="preset"
-                  {value}
-                  bind:group={presetChoice}
-                  disabled={!preset.available}
-                  class="mt-1"
-                />
+                <input type="radio" name="preset" {value} bind:group={presetChoice} class="mt-1" />
                 <span>
-                  <span class="block font-medium"
-                    >{preset.label}{preset.available ? '' : ' (coming soon)'}</span
-                  >
+                  <span class="block font-medium">{preset.label}</span>
                   <span class="block text-xs text-muted-foreground">{preset.description}</span>
                 </span>
               </label>
@@ -181,6 +214,12 @@
           >
         </div>
       </form>
+      <div class="mt-3 border-t border-border pt-3">
+        <Button variant="link" size="sm" class="px-0" disabled={busy} onclick={createSample}>
+          <Sparkles class="h-4 w-4" />
+          Or explore a sample world first
+        </Button>
+      </div>
     </div>
   {/if}
 
@@ -239,7 +278,15 @@
             <Plus class="h-4 w-4" />
             Create Your First Project
           </Button>
+          <Button size="lg" variant="outline" disabled={busy} onclick={createSample}>
+            <Sparkles class="h-4 w-4" />
+            Explore a sample world
+          </Button>
         </div>
+        <p class="mt-3 max-w-md text-xs text-muted-foreground">
+          The sample is a normal project with a few characters, places, a two-chapter story,
+          relations, and a timeline. Delete it from its Settings page whenever you like.
+        </p>
       </div>
     {/if}
 
@@ -258,4 +305,12 @@
       </div>
     {/if}
   </div>
+  <details class="mt-8 rounded-lg border border-border p-4 text-sm">
+    <summary class="cursor-pointer font-medium">Import a project</summary>
+    <form onsubmit={importZip} class="mt-3 space-y-2">
+      <Label for="archive">Import project from ZIP (up to 20 MB)</Label>
+      <input id="archive" name="archive" type="file" accept=".zip" required />
+      <Button type="submit" variant="outline" disabled={busy}>Import project</Button>
+    </form>
+  </details>
 </div>

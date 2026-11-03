@@ -7,8 +7,7 @@
 
 <div class="mx-auto max-w-lg space-y-4 p-6">
   <h1 class="text-2xl font-bold">
-    {#if page.status === 404}Not found{:else if page.status === 501}Not available yet{:else}Something
-      went wrong{/if}
+    {#if page.status === 404}Not found{:else}Something went wrong{/if}
   </h1>
   <p class="text-muted-foreground">{page.error?.message}</p>
   {#if page.status === 401}
