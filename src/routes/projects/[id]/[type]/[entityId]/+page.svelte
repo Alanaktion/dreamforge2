@@ -193,8 +193,16 @@
         showConvert = false;
         addingRelation = false;
       } else {
-        if (!Object.keys(values).some((key) => values[key] !== synced[key]))
-          revision = entity.revision ?? revision;
+        // Adopt the new revision unless the server changed a field the user is also editing.
+        // Fields only the server changed are merged in below, and saves send only the fields
+        // the user changed, so nothing is lost; a real overlap stays a conflict.
+        const clash = Object.keys(values).some(
+          (key) =>
+            values[key] !== synced[key] &&
+            incoming[key] !== synced[key] &&
+            incoming[key] !== values[key]
+        );
+        if (!clash && !conflict) revision = entity.revision ?? revision;
         const next = { ...values };
         for (const key of Object.keys(incoming)) {
           if (values[key] === synced[key] && values[key] !== incoming[key]) {
@@ -272,6 +280,17 @@
       saveError = e instanceof Error ? e.message : 'Save failed';
       return false;
     }
+  }
+
+  /**
+   * Resolve a conflict by discarding local edits and loading the version on disk, in place.
+   * A full page reload would trip the unsaved-changes guards below.
+   */
+  async function reloadLatest() {
+    if (dirty && !window.confirm('Discard your unsaved edits and load the latest version?')) return;
+    if (timer) clearTimeout(timer);
+    loadedId = '';
+    await invalidateAll();
   }
 
   beforeNavigate((nav) => {
@@ -404,8 +423,7 @@
               <CloudOff class="h-3 w-3" />
               {saveError}
               {#if conflict}
-                <button type="button" onclick={() => window.location.reload()}>Reload latest</button
-                >
+                <button type="button" onclick={() => void reloadLatest()}>Reload latest</button>
                 <button
                   type="button"
                   onclick={() => {

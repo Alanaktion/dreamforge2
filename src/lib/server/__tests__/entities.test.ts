@@ -29,6 +29,7 @@ import {
 } from '../entities';
 import { generateId } from '$lib/utils';
 import { readMarkdownFile, writeMarkdownFile } from '../markdown';
+import { fileRevision, ConflictError } from '../storage';
 
 let tmpDir: string;
 let TEST_PROJECT_ID: string;
@@ -354,6 +355,57 @@ describe('updateEntity', () => {
     const newPath = path.join(tmpDir, 'characters', 'new-name.md');
     expect(fs.existsSync(newPath)).toBe(true);
     expect(fs.existsSync(oldPath)).toBe(false);
+  });
+
+  it('returns a revision from create that the first save can use', () => {
+    const entity = createEntity(TEST_PROJECT_ID, tmpDir, 'character', { name: 'Fresh' });
+    expect(entity.revision).toBe(fileRevision(path.join(tmpDir, 'characters', 'fresh.md')));
+    const updated = updateEntity(
+      TEST_PROJECT_ID,
+      tmpDir,
+      'character',
+      entity.id,
+      { status: 'wip' },
+      entity.revision
+    );
+    expect(updated!.status).toBe('wip');
+  });
+
+  it('renames atomically, keeping one file per id', () => {
+    const entity = createEntity(TEST_PROJECT_ID, tmpDir, 'character', { name: 'Vess' });
+    const updated = updateEntity(
+      TEST_PROJECT_ID,
+      tmpDir,
+      'character',
+      entity.id,
+      { name: 'Vessa', body: 'renamed' },
+      entity.revision
+    );
+    const dir = path.join(tmpDir, 'characters');
+    expect(fs.readdirSync(dir)).toEqual(['vessa.md']);
+    expect(updated!.revision).toBe(fileRevision(path.join(dir, 'vessa.md')));
+    expect(readMarkdownFile(path.join(dir, 'vessa.md'))!.body).toBe('renamed');
+  });
+
+  it('refuses a stale save, including a rename, and leaves the file alone', () => {
+    const entity = createEntity(TEST_PROJECT_ID, tmpDir, 'character', { name: 'Stale' });
+    const file = path.join(tmpDir, 'characters', 'stale.md');
+    fs.appendFileSync(file, 'edited on disk');
+    expect(() =>
+      updateEntity(
+        TEST_PROJECT_ID,
+        tmpDir,
+        'character',
+        entity.id,
+        { name: 'Fresh' },
+        entity.revision
+      )
+    ).toThrow(ConflictError);
+    expect(() =>
+      updateEntity(TEST_PROJECT_ID, tmpDir, 'character', entity.id, { status: 'wip' }, '')
+    ).toThrow(ConflictError);
+    expect(fs.readdirSync(path.dirname(file))).toEqual(['stale.md']);
+    expect(fs.readFileSync(file, 'utf8')).toContain('edited on disk');
   });
 
   it('returns null for non-existent entity', () => {

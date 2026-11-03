@@ -1,4 +1,4 @@
-import { ConflictError } from '$lib/server/storage';
+import { ConflictError, expectedRevision } from '$lib/server/storage';
 import { fail, redirect } from '@sveltejs/kit';
 import {
   getEntity,
@@ -158,7 +158,7 @@ export const actions = {
         entityType,
         params.entityId,
         data,
-        form.get('overwrite') === 'true' ? undefined : String(form.get('revision') ?? '')
+        expectedRevision(form)
       );
       if (!updated) return fail(404, { error: 'Entity not found' });
       return { success: true, revision: updated.revision };

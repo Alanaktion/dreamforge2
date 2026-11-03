@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import { page } from '$app/state';
   import { enhance, deserialize } from '$app/forms';
   import { invalidateAll, beforeNavigate, goto } from '$app/navigation';
@@ -111,6 +112,8 @@
   let saveError = $state('');
   let revision = $state('');
   let conflict = $state(false);
+  // Bumped to remount the editor when the scene body is replaced from the server.
+  let editorEpoch = $state(0);
   let lastSavedAt = $state<Date | null>(null);
   let sessionStartWords = $state<number | null>(null);
 
@@ -191,6 +194,35 @@
   }
 
   let dirty = $derived(activeSceneId !== null && JSON.stringify(currentValues()) !== savedSnapshot);
+
+  /** The editor values a scene row would load as, in the same shape as currentValues(). */
+  function sceneValues(scene: SceneRow) {
+    return {
+      title: scene.title || '',
+      status: scene.status || 'draft',
+      narrator: scene.narrator || '',
+      time: scene.time || '',
+      place: scene.place || '',
+      participants: (scene.participants || []).join(', '),
+      backgroundImage: scene.backgroundImage || '',
+      body: scene.body || ''
+    };
+  }
+
+  // A reload can bring a new revision for the open scene that changes nothing in the editor,
+  // such as a reorder (sortOrder) or a synopsis saved from the summaries page. Adopt it, so
+  // the next autosave isn't reported as a conflict with our own change. If the editor's
+  // fields did change elsewhere, keep the old revision so the save is flagged.
+  $effect(() => {
+    const sceneId = activeSceneId;
+    if (!sceneId) return;
+    const row = chapters.flatMap((chapter) => chapter.scenes).find((s) => s.id === sceneId);
+    untrack(() => {
+      if (row?.revision && row.revision !== revision && !conflict && !saving) {
+        if (JSON.stringify(sceneValues(row)) === savedSnapshot) revision = row.revision;
+      }
+    });
+  });
 
   function loadScene(scene: SceneRow, chapterId: string) {
     activeSceneId = scene.id;
@@ -304,6 +336,30 @@
     } finally {
       saving = false;
     }
+  }
+
+  /**
+   * Resolve a conflict by discarding local edits and loading the scene from disk, in place.
+   * A full page reload would trip the unsaved-changes guards and close the scene.
+   */
+  async function reloadLatest() {
+    if (dirty && !window.confirm('Discard your unsaved edits and load the latest version?')) return;
+    const sceneId = activeSceneId;
+    await invalidateAll();
+    for (const chapter of chapters) {
+      const scene = chapter.scenes.find((s) => s.id === sceneId);
+      if (scene) {
+        expandedChapters = new Set([...expandedChapters, chapter.id]);
+        loadScene(scene, chapter.id);
+        editorEpoch++;
+        return;
+      }
+    }
+    // The scene was deleted or moved out of this story elsewhere: close it without saving.
+    conflict = false;
+    saveError = '';
+    savedSnapshot = JSON.stringify(currentValues());
+    await closeScene();
   }
 
   // Debounced autosave: the cleanup cancels the pending timer on every keystroke,
@@ -806,9 +862,7 @@
                 <CloudOff class="h-3 w-3" />
                 {saveError}
                 {#if conflict}
-                  <button type="button" onclick={() => window.location.reload()}
-                    >Reload latest</button
-                  >
+                  <button type="button" onclick={() => void reloadLatest()}>Reload latest</button>
                   <button
                     type="button"
                     onclick={() => {
@@ -950,7 +1004,7 @@
           </div>
         {/if}
 
-        {#key activeSceneId}
+        {#key `${activeSceneId}:${editorEpoch}`}
           <Editor
             content={sceneBody}
             entities={page.data?.entities || []}

@@ -2,7 +2,15 @@ import { validImageSignature } from '../imageSignature';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { writeFileAtomic, readJson, fileRevision, assertRevision, ConflictError } from '../storage';
+import {
+  writeFileAtomic,
+  readJson,
+  fileRevision,
+  assertRevision,
+  ConflictError,
+  expectedRevision,
+  moveAndWriteAtomic
+} from '../storage';
 import { parseMarkdown, serializeMarkdown } from '../markdown';
 import { loadRelations, addRelation } from '../relations';
 import { loadTimeline } from '../timelines';
@@ -71,6 +79,55 @@ it('preserves the original if atomic rename fails', () => {
   rename.mockRestore();
   expect(fs.readFileSync(file, 'utf8')).toBe('original');
   expect(fs.readdirSync(directory)).toEqual(['file']);
+});
+
+it('creates new files with the usual umask-based mode and keeps existing modes', () => {
+  if (process.platform === 'win32') return;
+  const file = path.join(directory, 'new.md');
+  writeFileAtomic(file, 'x');
+  expect(fs.statSync(file).mode & 0o777).toBe(0o666 & ~process.umask());
+  fs.chmodSync(file, 0o640);
+  writeFileAtomic(file, 'y');
+  expect(fs.statSync(file).mode & 0o777).toBe(0o640);
+});
+
+it('does not report a failed save when only the directory fsync is unsupported', () => {
+  const file = path.join(directory, 'file');
+  const open = fs.openSync;
+  const spy = vi.spyOn(fs, 'openSync').mockImplementation(((...args: Parameters<typeof open>) => {
+    if (args[0] === directory) throw Object.assign(new Error('EISDIR'), { code: 'EISDIR' });
+    return open(...args);
+  }) as typeof open);
+  try {
+    expect(() => writeFileAtomic(file, 'saved')).not.toThrow();
+  } finally {
+    spy.mockRestore();
+  }
+  expect(fs.readFileSync(file, 'utf8')).toBe('saved');
+  expect(fs.readdirSync(directory)).toEqual(['file']);
+});
+
+it('moves and rewrites a file without leaving a second copy', () => {
+  const from = path.join(directory, 'old.md');
+  const to = path.join(directory, 'new.md');
+  writeFileAtomic(from, 'old');
+  moveAndWriteAtomic(from, to, 'new');
+  expect(fs.readdirSync(directory)).toEqual(['new.md']);
+  expect(fs.readFileSync(to, 'utf8')).toBe('new');
+  writeFileAtomic(from, 'other');
+  expect(() => moveAndWriteAtomic(from, to, 'clobber')).toThrow('already exists');
+  expect(fs.readFileSync(to, 'utf8')).toBe('new');
+});
+
+it('reads the expected revision from a save form', () => {
+  const form = (entries: Record<string, string>) => {
+    const data = new FormData();
+    for (const [key, value] of Object.entries(entries)) data.set(key, value);
+    return data;
+  };
+  expect(expectedRevision(form({ revision: 'abc' }))).toBe('abc');
+  expect(expectedRevision(form({}))).toBe('');
+  expect(expectedRevision(form({ revision: 'abc', overwrite: 'true' }))).toBeUndefined();
 });
 
 it.each(['relations.json', 'timeline.json', 'writing-log.json'])(

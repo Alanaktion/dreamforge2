@@ -1,4 +1,4 @@
-import { ConflictError, StorageError } from '$lib/server/storage';
+import { ConflictError, expectedRevision, StorageError } from '$lib/server/storage';
 import { fail, redirect } from '@sveltejs/kit';
 import {
   getStoryMeta,
@@ -167,7 +167,7 @@ export const actions = {
         chapterId,
         sceneId,
         data,
-        form.get('overwrite') === 'true' ? undefined : String(form.get('revision') ?? '')
+        expectedRevision(form)
       );
       if (!updated) return fail(404, { error: 'Scene not found' });
       let warning = '';

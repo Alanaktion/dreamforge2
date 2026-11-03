@@ -1,6 +1,6 @@
-import { ConflictError } from '$lib/server/storage';
+import { ConflictError, expectedRevision } from '$lib/server/storage';
 import { fail, redirect } from '@sveltejs/kit';
-import { listEntities, createEntity, searchEntities, updateEntity } from '$lib/server/entities';
+import { listEntities, createEntity, updateEntity } from '$lib/server/entities';
 import { softDeleteEntity, restoreEntity } from '$lib/server/trash';
 import { routeToEntityType } from '$lib/utils/entityTypes';
 import { getNoteTemplates } from '$lib/server/templates';
@@ -23,11 +23,12 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
   const query = url.searchParams.get('q') || '';
   const status = url.searchParams.get('status') || '';
 
-  let entityList;
+  // Read from disk even when searching: index rows have no body, custom fields, or file
+  // revision, and without a revision every inline edit would be reported as a conflict.
+  let entityList = listEntities(params.id, project.dataPath, entityType);
   if (query) {
-    entityList = searchEntities(params.id, query, entityType);
-  } else {
-    entityList = listEntities(params.id, project.dataPath, entityType);
+    const needle = query.toLowerCase();
+    entityList = entityList.filter((e) => e.name.toLowerCase().includes(needle));
   }
 
   if (status) {
@@ -213,7 +214,7 @@ export const actions = {
         entityType,
         entityId,
         { [field]: parsed },
-        String(form.get('revision') ?? '')
+        expectedRevision(form)
       );
       if (!updated) return fail(404, { error: 'Entity not found' });
       return { success: true, revision: updated.revision };
