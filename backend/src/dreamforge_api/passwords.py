@@ -18,9 +18,16 @@ N, R, P = 16384, 8, 1
 MAXMEM = 64 * 1024 * 1024
 
 
+def _encode(password: str) -> bytes:
+    """NFKC, then UTF-8 with lone surrogates as U+FFFD, which is what Node does."""
+    normalized = unicodedata.normalize("NFKC", password)
+    cleaned = normalized.encode("utf-16", "surrogatepass").decode("utf-16", "replace")
+    return cleaned.encode("utf-8")
+
+
 def _derive(password: str, salt: bytes, length: int) -> bytes:
     return hashlib.scrypt(
-        unicodedata.normalize("NFKC", password).encode("utf-8"),
+        _encode(password),
         salt=salt,
         n=N,
         r=R,

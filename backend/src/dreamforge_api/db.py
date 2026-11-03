@@ -9,7 +9,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import Depends
+from fastapi import Depends, Request
 from sqlalchemy import event
 from sqlalchemy.engine import Engine
 from sqlmodel import Session, create_engine
@@ -47,18 +47,29 @@ def _engine(path: Path) -> Engine:
 
     @event.listens_for(engine, "begin")
     def _on_begin(conn):
-        conn.exec_driver_sql("BEGIN")
+        # Writers take the write lock up front. A deferred transaction that reads first and
+        # writes later fails at once with SQLITE_BUSY if another connection committed in
+        # between (WAL snapshot conflict; busy_timeout cannot help), and taking the lock up
+        # front also keeps check-then-write rules (last admin, duplicate email) race-free.
+        immediate = conn.get_execution_options().get("immediate", False)
+        conn.exec_driver_sql("BEGIN IMMEDIATE" if immediate else "BEGIN")
 
     return engine
 
 
-def get_engine() -> Engine:
-    return _engine(get_settings().database_path)
+def get_engine(*, write: bool = False) -> Engine:
+    """``write=True`` gives an engine whose transactions are BEGIN IMMEDIATE."""
+    engine = _engine(get_settings().database_path)
+    return engine.execution_options(immediate=True) if write else engine
 
 
-def get_session() -> Iterator[Session]:
-    """FastAPI dependency: one Session per request. Writes commit explicitly."""
-    with Session(get_engine()) as session:
+UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+
+
+def get_session(request: Request) -> Iterator[Session]:
+    """FastAPI dependency: one Session per request. Requests that may write get IMMEDIATE
+    transactions; reads stay deferred so they never wait on writers."""
+    with Session(get_engine(write=request.method in UNSAFE_METHODS)) as session:
         yield session
 
 

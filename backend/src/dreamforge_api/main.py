@@ -15,7 +15,7 @@ from fastapi.responses import JSONResponse
 from sqlmodel import Session
 
 from .config import get_settings
-from .db import get_engine
+from .db import UNSAFE_METHODS, get_engine
 from .migrate import migrate
 from .routers import account, admin, auth, health, invites, projects
 from .services.seed import seed
@@ -25,13 +25,12 @@ from .storage import ConflictError, StorageError
 
 log = logging.getLogger("dreamforge")
 SESSION_PURGE_SECONDS = 86400
-UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
 
 def startup() -> None:
     """Migrate, create the first admin, and drop expired sessions. Failing here is fatal."""
     migrate()
-    with Session(get_engine()) as db:
+    with Session(get_engine(write=True)) as db:
         seed(db)
         purge_expired_sessions(db)
     settings = get_settings()
@@ -46,7 +45,7 @@ async def _purge_sessions_daily() -> None:
     while True:
         await asyncio.sleep(SESSION_PURGE_SECONDS)
         try:
-            with Session(get_engine()) as db:
+            with Session(get_engine(write=True)) as db:
                 purge_expired_sessions(db)
         except Exception:  # keep the loop alive; try again tomorrow
             log.exception("Session purge failed")
@@ -68,9 +67,9 @@ def _same_origin(request: Request) -> bool:
     origin = request.headers.get("origin")
     if origin is None:
         return True
-    configured = get_settings().origin
-    if configured:
-        return origin.rstrip("/") == configured.rstrip("/")
+    allowed = get_settings().origins
+    if allowed:
+        return origin.rstrip("/") in allowed
     return urlsplit(origin).netloc == request.headers.get("host")
 
 

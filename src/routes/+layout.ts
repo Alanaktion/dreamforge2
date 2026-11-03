@@ -7,7 +7,7 @@ import type { LayoutLoad } from './$types';
 export const ssr = false;
 export const prerender = false;
 
-const ALWAYS_OPEN = ['/account', '/logout'];
+const ALWAYS_OPEN = ['/account'];
 
 export const load: LayoutLoad = async ({ fetch, url }) => {
   const me = await get<Me>('/api/auth/me', fetch);

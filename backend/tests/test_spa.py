@@ -14,6 +14,10 @@ def test_spa_fallback_and_assets(env):
         assert asset.text == "js" and "immutable" in asset.headers["cache-control"]
         assert client.get("/../secret.txt").text != "nope"
         assert client.get("/api/nope").status_code == 404
+        assert client.post("/api/nope", json={}).status_code == 404
+        missing = client.get("/_app/immutable/gone.js")
+        assert missing.status_code == 404 and "html" not in missing.headers["content-type"]
+        assert client.get("/favicon-old.png").status_code == 404
         assert client.get("/healthz").json() == {"status": "ok"}
         assert client.get("/api/healthz").json() == {"status": "ok"}
 

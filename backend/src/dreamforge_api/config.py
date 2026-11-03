@@ -15,7 +15,7 @@ class Settings:
     admin_email: str
     admin_password: str | None
     allow_registration_env: bool
-    origin: str | None
+    origins: frozenset[str]
     frontend_dir: Path
 
     @classmethod
@@ -29,8 +29,11 @@ class Settings:
             admin_email=(os.environ.get("ADMIN_EMAIL") or "admin@dreamforge.local").strip().lower(),
             admin_password=os.environ.get("ADMIN_PASSWORD") or None,
             allow_registration_env=os.environ.get("PUBLIC_ALLOW_REGISTRATION") == "true",
-            # Public URL, e.g. https://dreamforge.example. Writes from other origins are refused.
-            origin=os.environ.get("ORIGIN") or None,
+            # Public URL(s), comma-separated, e.g. https://dreamforge.example. API writes whose
+            # Origin header is not listed are refused. Unset: compare with the Host header.
+            origins=frozenset(
+                o.strip().rstrip("/") for o in os.environ.get("ORIGIN", "").split(",") if o.strip()
+            ),
             # The SvelteKit static build. Defaults to <repo>/build when run from a checkout.
             frontend_dir=Path(os.environ.get("FRONTEND_DIR") or REPO_ROOT / "build").resolve(),
         )

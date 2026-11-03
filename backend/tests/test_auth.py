@@ -116,3 +116,28 @@ def test_existing_scrypt_hash_still_signs_in(client):
         )
         db.commit()
     assert login(client, "legacy@example.test", NODE_PASSWORD).status_code == 200
+
+
+def test_origin_list(monkeypatch):
+    monkeypatch.setenv("ORIGIN", "http://localhost:5173, http://localhost:3000/")
+    with make_client() as client:
+        for origin, status in (
+            ("http://localhost:3000", 200),
+            ("http://localhost:5173", 200),
+            ("http://localhost:4000", 403),
+        ):
+            res = client.post(
+                "/api/auth/login",
+                json={"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD},
+                headers={"Origin": origin},
+            )
+            assert res.status_code == status, origin
+
+
+def test_lone_surrogate_password_is_not_a_server_error(client):
+    res = client.post(
+        "/api/auth/login",
+        content=b'{"email": "admin@example.test", "password": "\\ud800"}',
+        headers={"content-type": "application/json"},
+    )
+    assert res.status_code == 400

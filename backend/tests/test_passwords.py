@@ -29,3 +29,8 @@ def test_round_trip_and_format():
 def test_rejects_malformed_hashes():
     for bad in ("", "not-a-hash", ":", "abc:", "!!!:???"):
         assert not verify_password("password", bad)
+
+
+def test_lone_surrogate_matches_node():
+    # Node encodes a lone surrogate as U+FFFD; JSON can carry one ("\ud800").
+    assert verify_password("a\ud800b", hash_password("a\ufffdb"))

@@ -21,10 +21,16 @@ def mount_spa(app: FastAPI, build_dir: Path) -> None:
     build_dir = build_dir.resolve()
     index = build_dir / "index.html"
 
+    @app.api_route(
+        "/api/{rest:path}",
+        methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+        include_in_schema=False,
+    )
+    def api_not_found(rest: str):
+        raise HTTPException(404, "Not found")
+
     @app.get("/{path:path}", include_in_schema=False)
     def spa(path: str, request: Request):
-        if path == "api" or path.startswith("api/"):
-            raise HTTPException(404, "Not found")
         if path:
             candidate = (build_dir / path).resolve()
             if candidate.is_relative_to(build_dir) and candidate.is_file():
@@ -34,6 +40,10 @@ def mount_spa(app: FastAPI, build_dir: Path) -> None:
                     else {"Cache-Control": "public, max-age=3600"}
                 )
                 return FileResponse(candidate, headers=headers)
+            # A missing asset (e.g. a stale tab asking for an old chunk) is a 404, not the app
+            # shell: HTML served as JavaScript only produces a confusing MIME error.
+            if path.startswith("_app/") or "." in path.rsplit("/", 1)[-1]:
+                raise HTTPException(404, "Not found")
         if not index.is_file():
             return HTMLResponse(NOT_BUILT, status_code=503)
         return FileResponse(index, headers={"Cache-Control": "no-cache"})

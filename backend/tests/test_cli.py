@@ -32,3 +32,10 @@ def test_user_add_and_reset(capsys):
     assert main(["user", "add", "--email", "ada@example.test", "--username", "x"]) == 1
     assert "already taken" in capsys.readouterr().err
     assert main(["user", "reset-password", "nobody"]) == 1
+
+
+def test_empty_password_generates_one(capsys):
+    main(["user", "add", "--email", "e@example.test", "--username", "e", "--password", "x" * 8])
+    capsys.readouterr()
+    assert main(["user", "reset-password", "e", "--password", ""]) == 0
+    assert "Temporary password" in capsys.readouterr().out

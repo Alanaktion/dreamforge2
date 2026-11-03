@@ -40,15 +40,15 @@ docker compose up -d
 
 Set via environment variables:
 
-| Variable                    | Default                  | Description                                           |
-| --------------------------- | ------------------------ | ----------------------------------------------------- |
-| `DATABASE_PATH`             | `/data/dreamforge.db`    | SQLite database path                                  |
-| `DATA_DIR`                  | `/data/projects`         | Projects directory                                    |
-| `PUBLIC_ALLOW_REGISTRATION` | `false`                  | Allow new user signups                                |
-| `ADMIN_EMAIL`               | `admin@dreamforge.local` | Initial admin email                                   |
-| `ADMIN_PASSWORD`            | Generated once           | Initial admin password                                |
-| `ORIGIN`                    | unset                    | Public URL; API writes from other origins are refused |
-| `FRONTEND_DIR`              | `./build`                | The built SPA that FastAPI serves                     |
+| Variable                    | Default                  | Description                                                               |
+| --------------------------- | ------------------------ | ------------------------------------------------------------------------- |
+| `DATABASE_PATH`             | `/data/dreamforge.db`    | SQLite database path                                                      |
+| `DATA_DIR`                  | `/data/projects`         | Projects directory                                                        |
+| `PUBLIC_ALLOW_REGISTRATION` | `false`                  | Allow new user signups                                                    |
+| `ADMIN_EMAIL`               | `admin@dreamforge.local` | Initial admin email                                                       |
+| `ADMIN_PASSWORD`            | Generated once           | Initial admin password                                                    |
+| `ORIGIN`                    | unset                    | Public URL(s), comma-separated; API writes from other origins are refused |
+| `FRONTEND_DIR`              | `./build`                | The built SPA that FastAPI serves                                         |
 
 ## Development
 

@@ -37,7 +37,7 @@ def _migrate(args: argparse.Namespace) -> int:
 
 def _user_add(args: argparse.Namespace) -> int:
     migrate()
-    with Session(get_engine()) as db:
+    with Session(get_engine(write=True)) as db:
         generated = args.password is None
         password = args.password or accounts.generate_temporary_password()
         accounts.create_user(
@@ -60,13 +60,13 @@ def _user_add(args: argparse.Namespace) -> int:
 
 def _user_reset(args: argparse.Namespace) -> int:
     migrate()
-    with Session(get_engine()) as db:
+    with Session(get_engine(write=True)) as db:
         user = accounts.find_user(db, args.identifier)
         if user is None:
             raise accounts.AccountError(f'No user with email or username "{args.identifier}"')
         who = f"{user.username} <{user.email}>"
         disabled = user.disabled
-        if args.password is not None:
+        if args.password:  # an empty --password means "generate one", as before
             accounts.set_password(db, user.id, args.password)
             print(f"Password updated for {who}. Existing sessions were signed out.")
         else:
