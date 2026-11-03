@@ -1,0 +1,37 @@
+{
+  "frontmatter": {
+    "id": "9b1c",
+    "name": "Ana: \"the\" Bold",
+    "slug": "ana-the-bold",
+    "type": "character",
+    "tags": [
+      "yes",
+      "no",
+      "2024",
+      "on"
+    ],
+    "status": "wip",
+    "imagePath": null,
+    "created": "2026-11-03T08:00:00.000Z",
+    "modified": "2026-11-03T09:30:00.000Z",
+    "age": 42,
+    "height": 1.75,
+    "alive": true,
+    "birthday": "2001-02-03",
+    "ratio": "1:20",
+    "octal": "017",
+    "motto": "Line one\nline two\n",
+    "notes": "trailing  ",
+    "empty": "",
+    "hash": "#tag",
+    "nested": [
+      {
+        "thread": "t",
+        "type": "setup"
+      }
+    ],
+    "unicode": "Zoë — ☃",
+    "mention": "[@Bo](mention://character/abc)"
+  },
+  "body": "# Heading\n\nSome **bold** text.\n"
+}

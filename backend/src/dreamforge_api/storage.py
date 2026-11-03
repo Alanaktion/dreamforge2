@@ -1,12 +1,12 @@
 """Crash-safe file writes and edit-conflict detection, ported from src/lib/server/storage.ts.
 
-Project content (Markdown, JSON) still lives on disk. The endpoints that write it have not
-moved to this server yet; these helpers are here so they keep the same guarantees when they do.
+Project content (Markdown, JSON) lives on disk; the database only indexes it.
 """
 
 import hashlib
 import json
 import os
+import threading
 import uuid
 from pathlib import Path
 from typing import Any
@@ -104,3 +104,32 @@ def write_json(file_path: Path | str, value: Any) -> None:
     if path.exists():
         read_json(path, None)  # refuse to overwrite a file we cannot parse
     write_file_atomic(path, json.dumps(value, indent=2, ensure_ascii=False) + "\n")
+
+
+# The SvelteKit server relied on Node's single thread to serialize every read-modify-write
+# of a project file (Markdown frontmatter, relations.json, metadata.json). FastAPI runs sync
+# endpoints in a thread pool, so those sections take this per-project lock instead. It is
+# process-local: run one server process per data directory, as before.
+#
+# Lock order: the SQLite write lock first, then the project lock. Write requests begin their
+# BEGIN IMMEDIATE transaction in the access check, before any project lock, and code holding
+# a project lock never commits and then writes again (that would wait for the database while
+# holding the project lock, and deadlock against a request doing the opposite).
+_project_locks: dict[str, threading.RLock] = {}
+_project_locks_guard = threading.Lock()
+
+
+def project_lock(project_id: str) -> threading.RLock:
+    with _project_locks_guard:
+        lock = _project_locks.get(project_id)
+        if lock is None:
+            lock = _project_locks[project_id] = threading.RLock()
+        return lock
+
+
+def move_and_write_atomic(source: Path, target: Path, content: str | bytes) -> None:
+    """Rename then rewrite: a crash part way leaves one file with the id, never two."""
+    if target.exists():
+        raise FileExistsError(f"Cannot rename: {target} already exists")
+    os.rename(source, target)
+    write_file_atomic(target, content)

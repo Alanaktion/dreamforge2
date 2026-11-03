@@ -21,6 +21,7 @@ from ..schemas import (
 )
 from ..services import invites, members
 from ..services import projects as service
+from .entities import reindex
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 ROLES = ("editor", "commenter")
@@ -91,6 +92,9 @@ def remove(project_id: str, body: ProjectDelete, auth: CurrentAuth, db: Db):
 @router.get("/{project_id}/shell", response_model=ProjectShell)
 def shell(project_id: str, auth: CurrentAuth, db: Db):
     project, role = _access(db, project_id, auth)
+    # Files edited outside the app show up on the next page load, as with the old server.
+    db.rollback()  # end this read so the counts below see the fresh index
+    reindex(project_id)
     return {**service.sidebar(db, project, auth.user.id), "role": role}
 
 
