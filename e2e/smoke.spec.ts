@@ -550,3 +550,165 @@ test('invite links, instance admin, and per-member pins', async ({ page, browser
   await guest.close();
   expect(errors).toEqual([]);
 });
+
+test('brainstorming: optional panel, browsing, drafts, saves and revisiting', async ({
+  page
+}, testInfo) => {
+  const errors: string[] = [];
+  page.on('pageerror', (cause) => errors.push(cause.message));
+  await signIn(page);
+  const headers = { origin: 'http://127.0.0.1:4173' };
+  const projectResponse = await page.request.post('/api/projects', {
+    headers,
+    data: { name: `Brainstorm ${testInfo.project.name}` }
+  });
+  expect(projectResponse.ok()).toBe(true);
+  const { id: projectId } = await projectResponse.json();
+  const endpoint = `/api/projects/${projectId}/entities/notes`;
+  const firstResponse = await page.request.post(endpoint, {
+    headers,
+    data: {
+      name: 'A city that moves',
+      fields: { answeredPrompts: ['open', 'test', 'contradiction', 'next'] }
+    }
+  });
+  expect(firstResponse.ok()).toBe(true);
+  const first = await firstResponse.json();
+  const secondResponse = await page.request.post(endpoint, {
+    headers,
+    data: { name: 'Another idea' }
+  });
+  expect(secondResponse.ok()).toBe(true);
+  const second = await secondResponse.json();
+  const url = `/projects/${projectId}/notes/${first.id}`;
+  await page.goto(url);
+  const panel = page.getByRole('region', { name: 'Brainstorm', exact: true });
+  const toggle = panel.getByRole('button', { name: 'Brainstorm', exact: true });
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  await expect(panel.getByRole('textbox')).toHaveCount(0);
+  await toggle.click();
+  const answer = panel.getByRole('textbox');
+  await expect(answer).toHaveAccessibleName('Sum up this idea in one sentence.');
+  await answer.fill('A wandering city follows the rain.');
+  await panel.getByRole('button', { name: 'Next', exact: true }).click();
+  await expect(answer).toHaveValue('');
+  await answer.fill('The streets change overnight.');
+  await panel.getByRole('button', { name: 'Previous', exact: true }).click();
+  await expect(answer).toHaveValue('A wandering city follows the rain.');
+  await toggle.click();
+  await toggle.click();
+  await expect(answer).toHaveValue('A wandering city follows the rain.');
+  await panel.getByRole('radio', { name: 'List', exact: true }).check();
+  const questions = panel.getByRole('list', { name: 'Brainstorm questions' });
+  await expect(questions.getByRole('button')).toHaveCount(25);
+  await expect(questions.getByRole('button').filter({ hasText: 'Draft' })).toHaveCount(2);
+  await questions.getByRole('button', { name: /Sum up this idea/ }).click();
+  await expect(panel.getByRole('radio', { name: 'Card', exact: true })).toBeChecked();
+  await expect(answer).toHaveValue('A wandering city follows the rain.');
+
+  const category = panel.getByRole('button', { name: 'Prompt category' });
+  await category.click();
+  await page.getByRole('option', { name: 'Open Questions', exact: true }).click();
+  await expect(panel.getByText('You’ve explored these questions.', { exact: false })).toBeVisible();
+  await expect(answer).toHaveAccessibleName('What do you still not know about this?');
+  await panel.getByRole('button', { name: 'Previous', exact: true }).click();
+  await expect(answer).toHaveAccessibleName('What is the smallest part you could develop next?');
+  await panel.getByRole('button', { name: 'Next', exact: true }).click();
+  await expect(answer).toHaveAccessibleName('What do you still not know about this?');
+  await panel.getByRole('button', { name: 'Random', exact: true }).click();
+  await expect(answer).not.toHaveAccessibleName('What do you still not know about this?');
+  await category.click();
+  await page.getByRole('option', { name: 'All categories', exact: true }).click();
+  await panel.getByRole('radio', { name: 'List', exact: true }).check();
+  await questions.getByRole('button', { name: /Sum up this idea/ }).click();
+  await expect(answer).toHaveValue('A wandering city follows the rain.');
+
+  await page.getByRole('textbox', { name: 'Name', exact: true }).fill('');
+  await panel.getByRole('button', { name: 'Save answer', exact: true }).click();
+  await expect(panel.getByRole('alert')).toHaveText(
+    'Save or resolve your pending edits before saving this idea.'
+  );
+  await expect(answer).toHaveValue('A wandering city follows the rain.');
+  await page.getByRole('textbox', { name: 'Name', exact: true }).fill('A city that moves');
+
+  await page.route(`**${endpoint}/${first.id}`, async (route) => {
+    if (route.request().method() === 'PATCH') {
+      await route.fulfill({ status: 409, json: { detail: 'Changed elsewhere' } });
+    } else await route.continue();
+  });
+  await panel.getByRole('button', { name: 'Save answer', exact: true }).click();
+  await expect(panel.getByRole('alert')).toHaveText('Changed elsewhere');
+  await expect(answer).toHaveValue('A wandering city follows the rain.');
+  await page.unroute(`**${endpoint}/${first.id}`);
+
+  let releaseSave!: () => void;
+  const pendingSave = new Promise<void>((resolve) => {
+    releaseSave = resolve;
+  });
+  await page.route(`**${endpoint}/${first.id}`, async (route) => {
+    if (route.request().method() === 'PATCH') await pendingSave;
+    await route.continue();
+  });
+  await answer.press('Control+Enter');
+  await expect(panel.getByRole('button', { name: 'Saving…', exact: true })).toBeDisabled();
+  await expect(panel.getByRole('button', { name: 'Next', exact: true })).toBeDisabled();
+  await expect(category).toBeDisabled();
+  releaseSave();
+  await expect(answer).toHaveAccessibleName('Why is this interesting? What excites you about it?');
+  await expect(answer).toHaveValue('The streets change overnight.');
+  await page.unroute(`**${endpoint}/${first.id}`);
+  const saved = await (await page.request.get(`${endpoint}/${first.id}/content`)).json();
+  expect(saved.body).toContain('A wandering city follows the rain.');
+  expect(saved.frontmatter.answeredPrompts).toContain('core');
+  await panel.getByRole('radio', { name: 'List', exact: true }).check();
+  await questions.getByRole('button', { name: /Sum up this idea/ }).click();
+  await expect(answer).toHaveValue('');
+  await expect(panel.getByText('Answered before', { exact: true })).toBeVisible();
+
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true
+  );
+  await page.screenshot({
+    path: `test-results/brainstorm-${testInfo.project.name}.png`,
+    fullPage: true
+  });
+  await page.goto(`/projects/${projectId}/notes`);
+  await page.getByRole('main').getByText('Another idea', { exact: true }).first().click();
+  await expect(page).toHaveURL(new RegExp(`/notes/${second.id}$`));
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  await toggle.click();
+  await expect(answer).toHaveValue('');
+  await expect(category).toHaveText('All categories');
+  const characterEndpoint = `/api/projects/${projectId}/entities/characters`;
+  const characterResponse = await page.request.post(characterEndpoint, {
+    headers,
+    data: { name: 'The rainkeeper' }
+  });
+  expect(characterResponse.ok()).toBe(true);
+  const character = await characterResponse.json();
+  await page.goto(`/projects/${projectId}/characters/${character.id}`);
+  await toggle.click();
+  await panel.getByRole('button', { name: 'loyal', exact: true }).click();
+  await answer.fill('observant');
+  await panel.getByRole('button', { name: 'Next', exact: true }).click();
+  await panel.getByRole('button', { name: 'Previous', exact: true }).click();
+  await expect(panel.getByRole('button', { name: 'loyal', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'true'
+  );
+  await expect(answer).toHaveValue('observant');
+  await panel.getByRole('button', { name: 'Roll 3', exact: true }).click();
+  await expect(panel.locator('button[aria-pressed="true"]')).toHaveCount(4);
+  await panel.getByRole('button', { name: 'Save answer', exact: true }).click();
+  await expect(answer).toHaveAccessibleName('What flaws get them into trouble?');
+  const savedCharacter = await (
+    await page.request.get(`${characterEndpoint}/${character.id}/content`)
+  ).json();
+  expect(savedCharacter.frontmatter.virtues).toContain('loyal');
+  expect(savedCharacter.frontmatter.virtues).toContain('observant');
+  expect(savedCharacter.frontmatter.virtues).toHaveLength(5);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true
+  );
+  expect(errors).toEqual([]);
+});

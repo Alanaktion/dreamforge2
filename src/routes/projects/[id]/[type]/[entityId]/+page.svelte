@@ -623,13 +623,13 @@
     </div>
 
     {#if canEdit && page.data?.entityType}
-      <BrainstormDeck
-        type={page.data.entityType as EntityType}
-        answeredIds={(page.data.entity?.frontmatter?.answeredPrompts as string[]) || []}
-        startOpen={!page.data.entity?.body?.trim() &&
-          !(page.data.entity?.frontmatter?.answeredPrompts as string[] | undefined)?.length}
-        beforeSubmit={() => save()}
-      />
+      {#key `${page.params.id}/${page.params.type}/${page.params.entityId}`}
+        <BrainstormDeck
+          type={page.data.entityType as EntityType}
+          answeredIds={(page.data.entity?.frontmatter?.answeredPrompts as string[]) || []}
+          beforeSubmit={() => save()}
+        />
+      {/key}
     {/if}
 
     {#if visibleFields.length > 0 || (canEdit && hiddenFields.length > 0)}

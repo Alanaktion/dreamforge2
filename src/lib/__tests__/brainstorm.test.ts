@@ -9,6 +9,23 @@ function prompt(type: EntityType, id: string) {
 }
 
 describe('BRAINSTORM_PROMPTS', () => {
+  it('offers at least 25 distinct questions for every entity type', () => {
+    expect(Object.keys(BRAINSTORM_PROMPTS)).toHaveLength(7);
+    for (const prompts of Object.values(BRAINSTORM_PROMPTS)) {
+      expect(prompts.length).toBeGreaterThanOrEqual(25);
+      expect(new Set(prompts.map((prompt) => prompt.question)).size).toBe(prompts.length);
+      for (const prompt of prompts) {
+        expect(prompt.id.trim()).not.toBe('');
+        expect(prompt.category.trim()).not.toBe('');
+        expect(prompt.question.trim()).not.toBe('');
+        if (prompt.suggestions) {
+          expect(new Set(prompt.suggestions).size).toBe(prompt.suggestions.length);
+          expect(prompt.suggestions.length).toBeGreaterThanOrEqual(18);
+        }
+      }
+    }
+  });
+
   it('has unique ids per type and only targets fields that exist', () => {
     for (const [type, prompts] of Object.entries(BRAINSTORM_PROMPTS)) {
       const ids = prompts.map((p) => p.id);
