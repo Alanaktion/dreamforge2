@@ -755,3 +755,171 @@ test('brainstorming: optional panel, browsing, drafts, saves and revisiting', as
   );
   expect(errors).toEqual([]);
 });
+
+test('page-wide image drops upload, queue and link without editing the body', async ({
+  page
+}, testInfo) => {
+  await signIn(page);
+  await page.goto('/projects');
+  await page.getByRole('button', { name: 'New Project', exact: true }).first().click();
+  await page.getByLabel('Project Name').fill(`Drops ${testInfo.project.name}`);
+  await page.getByRole('button', { name: 'Create', exact: true }).click();
+  await expect(page).toHaveURL(/\/projects\/[^/]+$/);
+  const project = new URL(page.url()).pathname;
+  const png = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aY1sAAAAASUVORK5CYII=',
+    'base64'
+  );
+  async function drop(names: string[], selector = 'h1') {
+    const transfer = await page.evaluateHandle(
+      ({ names, bytes }) => {
+        const data = new DataTransfer();
+        for (const name of names) data.items.add(new File([new Uint8Array(bytes)], name));
+        return data;
+      },
+      { names, bytes: [...png] }
+    );
+    await page.locator(selector).first().dispatchEvent('dragenter', { dataTransfer: transfer });
+    await expect(page.getByText('Drop images to upload', { exact: true })).toBeVisible();
+    await page.locator(selector).first().dispatchEvent('drop', { dataTransfer: transfer });
+    await transfer.dispose();
+  }
+  await page.goto(`${project}/images`);
+  await drop(['first.png', 'unsupported.txt']);
+  await expect(page.getByRole('img', { name: 'first.png', exact: true })).toBeVisible();
+  await expect(page.getByRole('alert')).toContainText('unsupported.txt');
+  await expect(page.getByText('Drop images to upload', { exact: true })).toBeHidden();
+  await page.route('**/images?name=failed.png', (route) =>
+    route.fulfill({ status: 500, json: { detail: 'Upload failed' } })
+  );
+  await drop(['failed.png', 'after-failure.png']);
+  await expect(page.getByRole('alert')).toContainText('failed.png: Upload failed');
+  await expect(page.getByRole('img', { name: 'after-failure.png', exact: true })).toBeVisible();
+  await page.locator('h1').evaluate((node) => {
+    const transfer = new DataTransfer();
+    transfer.items.add(new File([new Uint8Array(20 * 1024 * 1024 + 1)], 'too-large.png'));
+    node.dispatchEvent(
+      new DragEvent('drop', { dataTransfer: transfer, bubbles: true, cancelable: true })
+    );
+  });
+  await expect(page.getByRole('alert')).toContainText('too-large.png: Images can be at most 20 MB');
+  await page.locator('h1').evaluate((node) => {
+    const transfer = new DataTransfer();
+    transfer.items.add(new File([''], 'cancel.png'));
+    node.dispatchEvent(new DragEvent('dragenter', { dataTransfer: transfer, bubbles: true }));
+  });
+  await expect(page.getByText('Drop images to upload', { exact: true })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByText('Drop images to upload', { exact: true })).toBeHidden();
+  expect(
+    await page.locator('h1').evaluate((node) => {
+      const transfer = new DataTransfer();
+      transfer.setData('text/plain', 'plain text');
+      return node.dispatchEvent(
+        new DragEvent('drop', { dataTransfer: transfer, bubbles: true, cancelable: true })
+      );
+    })
+  ).toBe(true);
+
+  await page.goto(`${project}/characters`);
+  const quick = page.getByRole('textbox', { name: /^Quick add/ });
+  await quick.fill('Drop recipient');
+  await quick.press('Enter');
+  await page.getByRole('main').getByText('Drop recipient', { exact: true }).first().click();
+  await expect(page).toHaveURL(/\/characters\/[^/]+$/);
+  const entityUrl = page.url();
+  const editor = page.locator('.tiptap');
+  await editor.fill('Keep these notes');
+  await expect(page.getByText('Saved', { exact: true })).toBeVisible();
+
+  let releaseUpload!: () => void;
+  const heldUpload = new Promise<void>((resolve) => {
+    releaseUpload = resolve;
+  });
+  await page.route('**/images?name=linked.png', async (route) => {
+    await heldUpload;
+    await route.continue();
+  });
+  const transfer = await page.evaluateHandle(
+    (bytes) => {
+      const data = new DataTransfer();
+      data.items.add(new File([new Uint8Array(bytes)], 'linked.png'));
+      return data;
+    },
+    [...png]
+  );
+  await editor.dispatchEvent('dragenter', { dataTransfer: transfer });
+  await expect(page.getByText('Drop images to upload and link', { exact: true })).toBeVisible();
+  await editor.dispatchEvent('drop', { dataTransfer: transfer });
+  await transfer.dispose();
+  await expect(page.getByText('Uploading 1 of 1: linked.png')).toBeVisible();
+  await editor.fill('Keep these unsaved notes');
+  await page
+    .getByLabel('Upload images', { exact: true })
+    .setInputFiles({ name: 'queued.png', mimeType: 'image/png', buffer: png });
+  releaseUpload();
+  await expect(page.getByRole('img', { name: 'linked.png', exact: true })).toBeVisible();
+  await expect(page.getByRole('img', { name: 'queued.png', exact: true })).toBeVisible();
+  await expect(editor).toHaveText('Keep these unsaved notes');
+  await page.reload();
+  await expect(page.getByRole('img', { name: 'linked.png', exact: true })).toBeVisible();
+  await expect(editor).toHaveText('Keep these unsaved notes');
+
+  let releaseNavigatingUpload!: () => void;
+  const navigatingUpload = new Promise<void>((resolve) => {
+    releaseNavigatingUpload = resolve;
+  });
+  await page.route('**/images?name=navigating.png', async (route) => {
+    await navigatingUpload;
+    await route.continue();
+  });
+  await page
+    .getByLabel('Upload images', { exact: true })
+    .setInputFiles({ name: 'navigating.png', mimeType: 'image/png', buffer: png });
+  await expect(page.getByText('Uploading 1 of 1: navigating.png')).toBeVisible();
+  await page.getByRole('link', { name: 'Gallery', exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`${project}/images$`));
+  const linkedAfterNavigation = page.waitForResponse(
+    (response) => response.request().method() === 'PUT' && response.url().includes('/links/')
+  );
+  releaseNavigatingUpload();
+  expect((await linkedAfterNavigation).ok()).toBe(true);
+  await expect(page.getByRole('img', { name: 'navigating.png', exact: true })).toBeVisible();
+  await page.goto(entityUrl);
+  await expect(page.getByRole('img', { name: 'navigating.png', exact: true })).toBeVisible();
+
+  await page.route('**/images/*/links/*', (route) =>
+    route.fulfill({ status: 500, json: { detail: 'Link failed' } })
+  );
+  await page
+    .getByLabel('Upload images', { exact: true })
+    .setInputFiles({ name: 'unlinked.png', mimeType: 'image/png', buffer: png });
+  await expect(page.getByRole('alert')).toContainText(
+    'Uploaded to the gallery, but could not link'
+  );
+  await page.goto(`${project}/images`);
+  await expect(page.getByRole('img', { name: 'unlinked.png', exact: true })).toBeVisible();
+
+  await page.route(`**/api/projects/*/images`, async (route) => {
+    if (route.request().method() !== 'GET') return route.continue();
+    const response = await route.fetch();
+    await route.fulfill({ response, json: { ...(await response.json()), role: 'commenter' } });
+  });
+  await page.reload();
+  const readOnlyTransfer = await page.evaluateHandle(
+    (bytes) => {
+      const data = new DataTransfer();
+      data.items.add(new File([new Uint8Array(bytes)], 'forbidden.png'));
+      return data;
+    },
+    [...png]
+  );
+  const prevented = await page.locator('h1').evaluate((node, dataTransfer) => {
+    const event = new DragEvent('drop', { dataTransfer, bubbles: true, cancelable: true });
+    return !node.dispatchEvent(event);
+  }, readOnlyTransfer);
+  expect(prevented).toBe(true);
+  await expect(page.getByText('Drop images to upload', { exact: true })).toBeHidden();
+  await expect(page.getByRole('img', { name: 'forbidden.png', exact: true })).toBeHidden();
+  await readOnlyTransfer.dispose();
+});

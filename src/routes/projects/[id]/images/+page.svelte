@@ -1,47 +1,47 @@
 <script lang="ts">
+  import { onDestroy } from 'svelte';
+  import ImageDropUpload from '$lib/components/ImageDropUpload.svelte';
   import { page } from '$app/state';
-  import { invalidateAll } from '$app/navigation';
   import { ArrowLeft, Upload, Image, X } from '@lucide/svelte';
-  import { ApiError } from '$lib/api';
-  import { IMAGE_ACCEPT, uploadImage, type ProjectImage } from '$lib/api/images';
+  import { IMAGE_ACCEPT, type ProjectImage } from '$lib/api/images';
   import { Button } from '$lib/components/ui/button';
 
+  let uploader = $state<ImageDropUpload>();
+  let destroyed = false;
   let uploadFiles = $state<File[]>([]);
   let uploading = $state(false);
+  let dropUploading = $state(false);
   let previewUrls = $state<string[]>([]);
 
   function handleFileSelect(e: Event) {
     const input = e.target as HTMLInputElement;
     if (!input.files) return;
+    previewUrls.forEach((url) => URL.revokeObjectURL(url));
     uploadFiles = Array.from(input.files);
+    input.value = '';
     previewUrls = uploadFiles.map((f) => URL.createObjectURL(f));
   }
 
-  let error = $state<string | null>(null);
   let readOnly = $derived(page.data?.role === 'commenter');
   let images = $derived((page.data?.images ?? []) as ProjectImage[]);
 
   async function upload(event: SubmitEvent) {
     event.preventDefault();
+    if (uploading || dropUploading || readOnly || !uploader) return;
     uploading = true;
-    const failed: string[] = [];
-    const kept: File[] = [];
-    for (const file of uploadFiles) {
-      try {
-        await uploadImage(page.params.id ?? '', file);
-      } catch (cause) {
-        failed.push(cause instanceof ApiError ? `${file.name}: ${cause.message}` : file.name);
-        kept.push(file);
-      }
-    }
+    const kept = await uploader.enqueue([...uploadFiles]);
+    if (destroyed) return;
     previewUrls.forEach((url) => URL.revokeObjectURL(url));
     // Keep only the files that failed, so they can be retried or removed.
     uploadFiles = kept;
     previewUrls = kept.map((f) => URL.createObjectURL(f));
-    error = failed.length ? `Not uploaded: ${failed.join('; ')}` : null;
     uploading = false;
-    await invalidateAll().catch(() => {});
   }
+
+  onDestroy(() => {
+    destroyed = true;
+    previewUrls.forEach((url) => URL.revokeObjectURL(url));
+  });
 
   function removePreview(i: number) {
     URL.revokeObjectURL(previewUrls[i]);
@@ -55,6 +55,14 @@
 </svelte:head>
 
 <div class="mx-auto max-w-5xl p-6">
+  {#key page.params.id}
+    <ImageDropUpload
+      projectId={page.params.id!}
+      disabled={readOnly}
+      bind:this={uploader}
+      bind:busy={dropUploading}
+    />
+  {/key}
   <div class="mb-6">
     <a
       href="/projects/{page.params.id}"
@@ -77,7 +85,9 @@
         >
           <div class="flex cursor-pointer flex-col items-center gap-2">
             <Upload class="h-8 w-8 text-muted-foreground" />
-            <span class="text-sm text-muted-foreground">Click to select images</span>
+            <span class="text-sm text-muted-foreground"
+              >Click to select images, or drop anywhere to upload</span
+            >
             <span class="text-xs text-muted-foreground">PNG, JPG, GIF, WebP, SVG</span>
             <input
               type="file"
@@ -85,6 +95,7 @@
               multiple
               aria-label="Select images"
               class="hidden"
+              disabled={uploading}
               onchange={handleFileSelect}
             />
           </div>
@@ -118,14 +129,11 @@
         {/if}
 
         {#if uploadFiles.length > 0}
-          <Button type="submit" disabled={uploading}>
+          <Button type="submit" disabled={uploading || dropUploading}>
             {uploading
               ? 'Uploading...'
               : `Upload ${uploadFiles.length} file${uploadFiles.length > 1 ? 's' : ''}`}
           </Button>
-        {/if}
-        {#if error}
-          <p class="text-sm text-destructive" role="alert">{error}</p>
         {/if}
       </form>
     </div>

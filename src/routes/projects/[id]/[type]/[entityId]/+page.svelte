@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ImageDropUpload from '$lib/components/ImageDropUpload.svelte';
   import EntityThumbnail from '$lib/components/EntityThumbnail.svelte';
   import { onMount, tick, untrack } from 'svelte';
   import { page } from '$app/state';
@@ -734,6 +735,13 @@
           </a>
         {/if}
       </div>
+      {#key `${page.params.id}/${page.params.entityId}`}
+        <ImageDropUpload
+          projectId={page.params.id!}
+          entityId={page.params.entityId!}
+          disabled={!canEdit}
+        />
+      {/key}
       {#if entityImages.length === 0}
         <p class="py-2 text-xs text-muted-foreground">No images linked to this entry.</p>
       {:else}
