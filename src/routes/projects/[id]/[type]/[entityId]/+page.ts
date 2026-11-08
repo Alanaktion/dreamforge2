@@ -27,6 +27,7 @@ interface EntityDetail {
     label: string | null;
     otherId: string;
     otherName: string;
+    primaryImageUrl?: string | null;
     otherType: EntitySummary['type'] | null;
   }>;
   projectName: string;

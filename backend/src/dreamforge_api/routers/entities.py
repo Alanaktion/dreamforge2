@@ -42,6 +42,7 @@ from ..services import (
 )
 from ..services import entities as service
 from ..services.backlinks import get_backlinks
+from ..services.primary_images import with_primary_images
 from ..storage import expected_revision
 
 router = APIRouter(prefix="/projects/{project_id}", tags=["entities"])
@@ -77,7 +78,10 @@ def _summary(row: Entity) -> dict[str, Any]:
 
 
 def _index(db: Db, project_id: str) -> list[dict[str, Any]]:
-    return [_summary(row) for row in service.entity_index(db, project_id)]
+    project = db.get(Project, project_id)
+    return with_primary_images(
+        db, project, [_summary(row) for row in service.entity_index(db, project_id)]
+    )
 
 
 def _fields(db: Db, project_id: str, entity_type: str | None = None) -> list[dict[str, Any]]:
@@ -112,7 +116,7 @@ def list_entities(
     entity_type = _type(route)
     project, role = _access(db, project_id, auth)
     # Read from disk even when filtering: index rows have no body, fields or revision.
-    items = service.list_entities(project, entity_type)
+    items = with_primary_images(db, project, service.list_entities(project, entity_type))
     if q:
         needle = q.lower()
         items = [e for e in items if needle in e["name"].lower()]
@@ -135,6 +139,8 @@ def create_entity(project_id: str, route: str, body: EntityCreate, auth: Current
     if not name:
         raise HTTPException(400, "Name is required")
     fields = _check_fields({k: v for k, v in body.fields.items() if k != "name"})
+    if fields.get("imagePath") is not None:
+        raise HTTPException(400, "Link an image to the entity before making it primary")
     return service.create_entity(db, project, entity_type, name, fields, body.body)
 
 
@@ -145,7 +151,9 @@ def show_entity(project_id: str, route: str, entity_id: str, auth: CurrentAuth, 
     entity = service.get_entity(project, entity_type, entity_id)
     if entity is None:
         raise HTTPException(404, "Entity not found")
+    with_primary_images(db, project, [entity])
     index = _index(db, project_id)
+    urls = {e["id"]: e["primary_image_url"] for e in index}
     names = {e["id"]: e for e in index}
     # Relations are stored once, source to target; show both directions.
     linked = []
@@ -164,6 +172,7 @@ def show_entity(project_id: str, route: str, entity_id: str, auth: CurrentAuth, 
                 "other_id": other_id,
                 "other_name": other["name"] if other else "Unknown entity",
                 "other_type": other["type"] if other else None,
+                "primary_image_url": urls.get(other_id),
             }
         )
     return {
@@ -171,7 +180,9 @@ def show_entity(project_id: str, route: str, entity_id: str, auth: CurrentAuth, 
         "custom_fields": _fields(db, project_id, entity_type),
         "index": index,
         "bookmarked": bookmarks.is_bookmarked(db, auth.user.id, project_id, entity_id),
-        "backlinks": get_backlinks(project, entity_id, entity["name"]),
+        "backlinks": with_primary_images(
+            db, project, get_backlinks(project, entity_id, entity["name"])
+        ),
         "relations": linked,
         "images": images.images_for_entity(db, project_id, entity_id),
         "project_images": db.exec(
@@ -193,7 +204,7 @@ def entity_content(project_id: str, route: str, entity_id: str, auth: CurrentAut
     entity = service.get_entity(project, entity_type, entity_id)
     if entity is None:
         raise HTTPException(404, "Entity not found")
-    return entity
+    return with_primary_images(db, project, [entity])[0]
 
 
 @router.patch("/entities/{route}/{entity_id}", response_model=Saved)
@@ -210,6 +221,7 @@ def update_entity(
     )
     if updated is None:
         raise HTTPException(404, "Entity not found")
+    with_primary_images(db, project, [updated])
     return {"revision": updated["revision"], "entity": updated}
 
 

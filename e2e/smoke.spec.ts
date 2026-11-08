@@ -356,6 +356,49 @@ test('images, entity image links, search and the relations page', async ({ page 
   await page.getByRole('link', { name: /Mapmaker/ }).click();
   await expect(page).toHaveURL(/\/characters\/[^/]+$/);
   await expect(page.getByRole('img', { name: 'world-map.png' })).toBeVisible();
+  const entityPath = new URL(page.url()).pathname;
+  await page.getByRole('textbox', { name: 'Name', exact: true }).fill('Mapmaker Arlen');
+  await page.getByRole('button', { name: 'Make world-map.png primary', exact: true }).click();
+  await expect(page.getByText('Saved', { exact: true })).toBeVisible();
+  await expect(page.getByText('Primary', { exact: true })).toBeVisible();
+  const selected = (
+    await (
+      await page.request.get(`/api${project}/entities/characters/${entityPath.split('/').at(-1)}`)
+    ).json()
+  ).entity;
+  expect(selected.name).toBe('Mapmaker Arlen');
+  expect(selected.imagePath).toMatch(/^images\//);
+  const primaryUrl = selected.primaryImageUrl;
+
+  await page.goto(`${project}/characters`);
+  await page.getByRole('button', { name: 'Card layout' }).focus();
+  await page.getByRole('button', { name: 'Card layout' }).press('Enter');
+  const card = page.getByRole('main').getByRole('link', { name: /Mapmaker Arlen/ });
+  await expect(card.locator('img')).toHaveAttribute('src', primaryUrl);
+  await expect(card.locator('img')).toHaveJSProperty('naturalWidth', 1);
+  await page.screenshot({ path: testInfo.outputPath('primary-image-cards.png') });
+  await page.getByRole('button', { name: 'Table layout' }).focus();
+  await page.getByRole('button', { name: 'Table layout' }).press('Enter');
+  await expect(
+    page.getByRole('link', { name: 'Mapmaker Arlen', exact: true }).locator('img')
+  ).toHaveAttribute('src', primaryUrl);
+
+  await page.goto(`${project}/search?q=mapmak`);
+  const searchLink = page.getByRole('main').getByRole('link', { name: /Mapmaker Arlen/ });
+  await expect(searchLink.locator('img')).toHaveAttribute('src', primaryUrl);
+  await page.route(`**${primaryUrl}`, (route) => route.fulfill({ status: 404, body: '' }));
+  await page.reload();
+  await expect(searchLink.locator('img')).toHaveCount(0);
+  await expect(searchLink.locator('svg').first()).toBeVisible();
+  await page.unroute(`**${primaryUrl}`);
+
+  await page.goto(entityPath);
+  await page.getByRole('button', { name: 'Clear primary', exact: true }).click();
+  await expect(page.getByText('Saved', { exact: true })).toBeVisible();
+  await page.reload();
+  await expect(page.getByText('Primary', { exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Make world-map.png primary', exact: true }).click();
+  await expect(page.getByText('Saved', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Unlink image world-map.png' }).click();
   await expect(page.getByText('No images linked to this entry.')).toBeVisible();
 

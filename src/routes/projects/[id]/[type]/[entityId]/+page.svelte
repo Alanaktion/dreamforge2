@@ -1,4 +1,5 @@
 <script lang="ts">
+  import EntityThumbnail from '$lib/components/EntityThumbnail.svelte';
   import { onMount, tick, untrack } from 'svelte';
   import { page } from '$app/state';
   import { api, ApiError } from '$lib/api';
@@ -70,6 +71,7 @@
     label: string | null;
     otherId: string;
     otherName: string;
+    primaryImageUrl?: string | null;
     otherType: EntityType | null;
   }
 
@@ -107,8 +109,15 @@
   });
 
   /** Suggestions for an entityRef field, limited to the referenced type when one is set. */
-  function refOptions(refType?: string): Array<{ id: string; name: string }> {
-    const all = (page.data?.entities || []) as Array<{ id: string; name: string; type: string }>;
+  function refOptions(
+    refType?: string
+  ): Array<{ id: string; name: string; primaryImageUrl?: string | null }> {
+    const all = (page.data?.entities || []) as Array<{
+      id: string;
+      name: string;
+      type: string;
+      primaryImageUrl?: string | null;
+    }>;
     return refType ? all.filter((e) => e.type === refType) : all;
   }
 
@@ -138,7 +147,8 @@
       name: entity?.name || '',
       body: entity?.body || '',
       tags: (entity?.tags || []).join(', '),
-      status: entity?.status || 'draft'
+      status: entity?.status || 'draft',
+      imagePath: entity?.imagePath || ''
     };
     for (const field of fieldDefs) {
       out[field.key] = encodeField(field, entity?.frontmatter?.[field.key]);
@@ -236,6 +246,7 @@
     if (saveStatus === 'saving') return false;
     if (timer) clearTimeout(timer);
     const payload = { ...values };
+    const primaryChanged = payload.imagePath !== synced.imagePath;
     if (!Object.keys(payload).some((key) => payload[key] !== synced[key])) return true;
     if (!payload.name.trim()) {
       saveStatus = 'error';
@@ -252,6 +263,7 @@
         if (value === synced[key]) continue;
         const type = key === 'tags' ? 'tags' : fieldDefs.find((f) => f.key === key)?.type;
         if (key === 'body') bodyText = value;
+        else if (key === 'imagePath') fields[key] = value || null;
         else if (type === 'boolean') fields[key] = value === 'true' || value === 'on';
         else if (type === 'tags') fields[key] = splitList(value);
         else fields[key] = value;
@@ -272,6 +284,7 @@
       conflict = false;
       synced = payload;
       saveStatus = 'saved';
+      if (primaryChanged) await invalidateAll();
       return true;
     } catch (e) {
       saveStatus = 'error';
@@ -381,6 +394,7 @@
     (page.data?.entityImages ?? []) as Array<{
       id: string;
       url: string;
+      filename: string;
       altText: string | null;
       originalName: string;
     }>
@@ -484,15 +498,19 @@
   {:else if field.type === 'date'}
     <Input {id} type="date" disabled={!canEdit} bind:value={values[field.key]} />
   {:else if field.type === 'entityRef'}
-    <Input
-      {id}
-      type="text"
-      list="ref-{field.key}"
-      disabled={!canEdit}
-      bind:value={values[field.key]}
-      placeholder={field.placeholder ||
-        `Search ${ENTITY_PLURAL[field.entityType as EntityType]?.toLowerCase() || 'entities'}…`}
-    />
+    {@const reference = refOptions(field.entityType).find((e) => e.name === values[field.key])}
+    <div class="flex items-center gap-2">
+      {#if reference}<EntityThumbnail src={reference.primaryImageUrl} />{/if}
+      <Input
+        {id}
+        type="text"
+        list="ref-{field.key}"
+        disabled={!canEdit}
+        bind:value={values[field.key]}
+        placeholder={field.placeholder ||
+          `Search ${ENTITY_PLURAL[field.entityType as EntityType]?.toLowerCase() || 'entities'}…`}
+      />
+    </div>
     <datalist id="ref-{field.key}">
       {#each refOptions(field.entityType) as option (option.id)}
         <option value={option.name}></option>
@@ -696,6 +714,16 @@
     <div class="rounded-lg border border-border bg-card p-4">
       <div class="mb-2 flex items-center justify-between">
         <h2 class="text-sm font-medium">Images</h2>
+        {#if canEdit && values.imagePath}
+          <Button
+            variant="ghost"
+            size="xs"
+            disabled={saveStatus === 'saving' || conflict}
+            onclick={() => {
+              values.imagePath = '';
+            }}>Clear primary</Button
+          >
+        {/if}
         {#if canEdit}
           <a
             href="/projects/{page.params.id}/images"
@@ -719,7 +747,21 @@
                   class="h-20 w-20 rounded-lg border border-border object-cover"
                 />
               </a>
+              {#if values.imagePath === `images/${img.filename}`}
+                <span class="block text-center text-xs text-muted-foreground">Primary</span>
+              {/if}
               {#if canEdit}
+                {#if values.imagePath !== `images/${img.filename}`}
+                  <Button
+                    variant="outline"
+                    size="xs"
+                    disabled={saveStatus === 'saving' || conflict}
+                    aria-label="Make {img.originalName} primary"
+                    onclick={() => {
+                      values.imagePath = `images/${img.filename}`;
+                    }}>Make primary</Button
+                  >
+                {/if}
                 <Button
                   variant="destructive"
                   size="icon-xs"
@@ -887,11 +929,12 @@
                 : `is ${relationLabel(relation.relationType)} of`}
             </span>
             <a
-              class="font-medium hover:underline"
+              class="inline-flex items-center gap-2 font-medium hover:underline"
               href="/projects/{page.params.id}/{entityTypeToRoute(
                 relation.otherType || 'character'
               )}/{relation.otherId}"
             >
+              <EntityThumbnail src={relation.primaryImageUrl} />
               {relation.otherName}
             </a>
             {#if relation.label}
@@ -930,7 +973,7 @@
             {#if link.kind === 'scene'}
               <FileText class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
             {:else}
-              <Link2 class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              <EntityThumbnail src={link.primaryImageUrl} icon={Link2} class="size-3.5" />
             {/if}
             <span class="truncate">{link.name}</span>
             <span class="truncate text-xs text-muted-foreground">{link.context}</span>

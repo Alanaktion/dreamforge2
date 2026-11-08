@@ -9,6 +9,7 @@ from ..db import Db
 from ..deps import CurrentAuth
 from ..schemas import RelationsPage, SearchPage
 from ..services import entities, members, relations, search
+from ..services.primary_images import with_primary_images
 from .entities import _access, _index
 
 router = APIRouter(prefix="/projects/{project_id}", tags=["search"])
@@ -30,7 +31,9 @@ def search_project(
         "query": q,
         "kind": kind,
         "type": type if entity_type else "",
-        "results": search.search(project, q, kind or None, entity_type),
+        "results": with_primary_images(
+            db, project, search.search(project, q, kind or None, entity_type)
+        ),
         "project_name": project.name,
         "role": role,
     }

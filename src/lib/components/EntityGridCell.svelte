@@ -1,4 +1,5 @@
 <script lang="ts">
+  import EntityThumbnail from '$lib/components/EntityThumbnail.svelte';
   import { Badge } from '$lib/components/ui/badge';
   import * as Popover from '$lib/components/ui/popover';
   import { cn } from '$lib/utils';
@@ -37,7 +38,7 @@
     canEdit?: boolean;
     /** An earlier cell overflows across this one, so drop the empty placeholder. */
     covered?: boolean;
-    refOptions?: { id: string; name: string }[];
+    refOptions?: { id: string; name: string; primaryImageUrl?: string | null }[];
     href?: string;
     onCommit: (raw: string, move: Move) => void;
     onCancel: () => void;
@@ -188,7 +189,16 @@
       onCommit((e.currentTarget as HTMLInputElement).checked ? 'true' : 'false', 'none')}
   />
 {:else if column.key === 'name'}
-  <a class="truncate font-medium hover:underline" {href} tabindex={-1}>{display}</a>
+  <a class="flex min-w-0 items-center gap-2 font-medium hover:underline" {href} tabindex={-1}>
+    <EntityThumbnail src={entity.primaryImageUrl} />
+    <span class="truncate">{display}</span>
+  </a>
+{:else if column.type === 'entityRef'}
+  {@const reference = refOptions.find((e) => e.name === display)}
+  <span class="flex min-w-0 items-center gap-2">
+    {#if reference}<EntityThumbnail src={reference.primaryImageUrl} />{/if}
+    <span class="truncate text-sm text-muted-foreground">{display || placeholder}</span>
+  </span>
 {:else if column.type === 'tags'}
   {#if Array.isArray(value) && value.length}
     <span class="flex items-center gap-1">

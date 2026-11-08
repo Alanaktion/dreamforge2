@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { mount, onMount, unmount } from 'svelte';
+  import EntityThumbnail from '$lib/components/EntityThumbnail.svelte';
   import { Editor, type Range } from '@tiptap/core';
   import StarterKit from '@tiptap/starter-kit';
   import Link from '@tiptap/extension-link';
@@ -58,7 +59,13 @@
   }: {
     content?: string;
     placeholder?: string;
-    entities?: { id: string; type: string; name: string; status?: string }[];
+    entities?: {
+      id: string;
+      type: string;
+      name: string;
+      status?: string;
+      primaryImageUrl?: string | null;
+    }[];
     images?: { id: string; filename: string; originalName: string; altText?: string | null }[];
     projectId?: string;
     onUpdate?: (md: string) => void;
@@ -214,9 +221,26 @@
       .join('');
   }
 
+  let mentionThumbnails: ReturnType<typeof mount>[] = [];
+
+  function clearMentionThumbnails() {
+    for (const thumbnail of mentionThumbnails) void unmount(thumbnail);
+    mentionThumbnails = [];
+  }
+
   function bindMentionItems(dom: HTMLElement, props: any) {
+    clearMentionThumbnails();
     dom.innerHTML = renderMentionItems(props);
-    dom.querySelectorAll('button').forEach((btn) => {
+    dom.querySelectorAll('button').forEach((btn, index) => {
+      const target = document.createElement('span');
+      target.className = 'inline-flex shrink-0';
+      btn.prepend(target);
+      mentionThumbnails.push(
+        mount(EntityThumbnail, {
+          target,
+          props: { src: props.items[index].primaryImageUrl }
+        })
+      );
       btn.addEventListener('mousedown', (e) => {
         e.preventDefault();
         const idx = parseInt(btn.dataset.index || '0', 10);
@@ -305,7 +329,12 @@
           return entities
             .filter((e) => e.name.toLowerCase().includes(query.toLowerCase()))
             .slice(0, 8)
-            .map((e) => ({ id: e.id, type: e.type, label: e.name }));
+            .map((e) => ({
+              id: e.id,
+              type: e.type,
+              label: e.name,
+              primaryImageUrl: e.primaryImageUrl
+            }));
         },
         render: () => {
           let dom: HTMLDivElement;
@@ -322,6 +351,7 @@
               bindMentionItems(dom, props);
             },
             onExit: () => {
+              clearMentionThumbnails();
               if (dom) dom.remove();
             }
           };
@@ -379,6 +409,7 @@
 
     return () => {
       editor.destroy();
+      clearMentionThumbnails();
     };
   });
 

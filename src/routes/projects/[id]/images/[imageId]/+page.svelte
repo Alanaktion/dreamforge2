@@ -1,4 +1,5 @@
 <script lang="ts">
+  import EntityThumbnail from '$lib/components/EntityThumbnail.svelte';
   import { page } from '$app/state';
   import { goto, invalidateAll } from '$app/navigation';
   import { ArrowLeft, Save, Trash2, Link2, Unlink, Image, ExternalLink } from '@lucide/svelte';
@@ -230,6 +231,10 @@
               )}/{entity.id}"
               class="flex items-center gap-1 text-xs hover:underline"
             >
+              <EntityThumbnail
+                src={page.data?.allEntities.find((e: EntitySummary) => e.id === entity.id)
+                  ?.primaryImageUrl}
+              />
               <Badge variant="secondary">{entity.type}</Badge>
               {entity.name}
             </a>

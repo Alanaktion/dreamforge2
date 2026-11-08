@@ -1,4 +1,5 @@
 <script lang="ts">
+  import EntityThumbnail from '$lib/components/EntityThumbnail.svelte';
   import { projectExportUrl } from '$lib/api/transfer';
   import { page } from '$app/state';
   import { goto } from '$app/navigation';
@@ -35,6 +36,7 @@
   } from '@lucide/svelte';
 
   interface PaletteEntity {
+    primaryImageUrl?: string | null;
     id: string;
     type: EntityType;
     name: string;
@@ -254,7 +256,7 @@
                 goto(`/projects/${projectId}/${entityTypeToRoute(entity.type)}/${entity.id}`)
               )}
           >
-            <Icon class="h-4 w-4 text-muted-foreground" />
+            <EntityThumbnail src={entity.primaryImageUrl} icon={Icon} />
             <span class="truncate">{entity.name}</span>
             <span class="ml-auto text-xs text-muted-foreground">{ENTITY_LABELS[entity.type]}</span>
           </Command.Item>

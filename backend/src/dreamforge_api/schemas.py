@@ -181,6 +181,7 @@ class ProjectAccess(Model):
 
 
 class SidebarBookmark(Model):
+    primary_image_url: str | None = None
     id: str
     entity_id: str
     entity_name: str
@@ -224,6 +225,7 @@ Name = Annotated[str, StringConstraints(max_length=1000)]
 
 
 class EntityOut(Model):
+    primary_image_url: str | None = None
     revision: str
     id: str
     type: str
@@ -238,6 +240,7 @@ class EntityOut(Model):
 
 
 class EntitySummary(Model):
+    primary_image_url: str | None = None
     id: str
     type: str
     name: str
@@ -267,6 +270,7 @@ class EntityList(Model):
 
 
 class Backlink(Model):
+    primary_image_url: str | None = None
     kind: Literal["entity", "scene"]
     id: str
     name: str
@@ -276,6 +280,7 @@ class Backlink(Model):
 
 
 class EntityRelation(Model):
+    primary_image_url: str | None = None
     id: str
     outgoing: bool
     relation_type: str
@@ -725,6 +730,7 @@ class DailyGoal(Model):
 
 
 class RecentItem(Model):
+    primary_image_url: str | None = None
     kind: Literal["entity", "scene"]
     id: str
     name: str
@@ -826,6 +832,7 @@ class RelationsPage(Model):
 
 
 class SearchResult(Model):
+    primary_image_url: str | None = None
     kind: Literal["entity", "scene"]
     id: str
     type: str

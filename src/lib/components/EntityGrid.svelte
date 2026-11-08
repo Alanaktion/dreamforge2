@@ -41,7 +41,7 @@
     projectId: string;
     route: string;
     canEdit?: boolean;
-    refEntities?: Record<string, { id: string; name: string }[]>;
+    refEntities?: Record<string, { id: string; name: string; primaryImageUrl?: string | null }[]>;
     emptyMessage?: string;
     entityHref: (entity: Record<string, any>) => string;
     onSaved: (entityId: string, column: GridColumn, raw: string, revision?: string) => void;

@@ -15,6 +15,7 @@ import re
 from pathlib import Path
 from typing import Any, Literal
 
+from fastapi import HTTPException
 from sqlalchemy import delete
 from sqlmodel import Session, col, select
 
@@ -25,6 +26,7 @@ from ..storage import assert_revision, file_revision, move_and_write_atomic, pro
 from ..utils import generate_id, is_safe_path_segment, iso_now
 from .members import project_path
 from .metadata import sync_project_metadata
+from .primary_images import linked_image_paths
 
 log = logging.getLogger(__name__)
 
@@ -242,6 +244,14 @@ def update_entity(
         assert_revision(current, expected_revision)
         existing, old_body = md
         changes = {k: v for k, v in data.items() if k not in RESERVED_KEYS}
+        if "imagePath" in changes and changes["imagePath"] is not None:
+            path = changes["imagePath"]
+            if not isinstance(path, str) or (entity_id, path) not in linked_image_paths(
+                db, project
+            ):
+                raise HTTPException(
+                    400, "Primary image must be an available image linked to this entity"
+                )
         body = data["body"] if isinstance(data.get("body"), str) else old_body
         old_name = js_str(existing.get("name")) if existing.get("name") is not None else ""
         slug = current.name.removesuffix(".md")
@@ -276,7 +286,7 @@ def duplicate_entity(
     carried = {
         k: v
         for k, v in source["frontmatter"].items()
-        if k not in {"id", "name", "slug", "type", "created", "modified", "tags"}
+        if k not in {"id", "name", "slug", "type", "created", "modified", "tags", "imagePath"}
     }
     return create_entity(
         db,

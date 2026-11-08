@@ -26,6 +26,7 @@ from ..models import (
 from ..storage import read_json, write_file_atomic, write_json
 from ..utils import generate_id, iso_now
 from .members import ProjectRole, project_path
+from .primary_images import primary_image_urls
 
 PROJECT_DIRS = (
     "characters",
@@ -199,11 +200,18 @@ def sidebar(db: Session, project: Project, user_id: str) -> dict:
         .where(Bookmark.user_id == user_id, Bookmark.project_id == project.id)
         .order_by(Bookmark.created_at)
     ).all()
+    urls = primary_image_urls(db, project)
     return {
         "project_name": project.name,
         "entity_counts": counts,
         "bookmarks": [
-            {"id": b.id, "entity_id": b.entity_id, "entity_name": e.name, "entity_type": e.type}
+            {
+                "id": b.id,
+                "entity_id": b.entity_id,
+                "entity_name": e.name,
+                "entity_type": e.type,
+                "primary_image_url": urls.get(e.id),
+            }
             for b, e in rows
         ],
     }

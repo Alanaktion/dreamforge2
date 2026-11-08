@@ -1,11 +1,12 @@
 <script lang="ts">
+  import EntityThumbnail from '$lib/components/EntityThumbnail.svelte';
   import { page } from '$app/state';
   import { ApiError } from '$lib/api';
   import { deleteEntity } from '$lib/api/entities';
   import { Badge } from '$lib/components/ui/badge';
   import { Button } from '$lib/components/ui/button';
   import { cn, formatDate } from '$lib/utils';
-  import { FileText, MoreHorizontal, Trash2 } from '@lucide/svelte';
+  import { MoreHorizontal, Trash2 } from '@lucide/svelte';
 
   let {
     entities,
@@ -46,13 +47,17 @@
       <a href={entityHref(entity)} class="flex items-center gap-4 px-4 py-3">
         <div
           class={cn(
-            'flex-shrink-0 rounded-full border p-2',
+            'flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-full border',
             entity.status === 'complete' && 'border-green-500/30',
             entity.status === 'wip' && 'border-yellow-500/30',
             entity.status === 'draft' && 'border-muted-foreground/30'
           )}
         >
-          <FileText class="h-4 w-4 text-muted-foreground" />
+          <EntityThumbnail
+            iconClass="size-4"
+            src={entity.primaryImageUrl}
+            class={entity.primaryImageUrl ? 'size-full' : 'size-4'}
+          />
         </div>
         <div class="flex-1 min-w-0">
           <div class="flex items-center gap-2">

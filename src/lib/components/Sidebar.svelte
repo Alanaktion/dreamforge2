@@ -1,4 +1,5 @@
 <script lang="ts">
+  import EntityThumbnail from '$lib/components/EntityThumbnail.svelte';
   import { projectExportUrl } from '$lib/api/transfer';
   import { afterNavigate, goto } from '$app/navigation';
   import { api } from '$lib/api';
@@ -254,6 +255,10 @@
                         href={`${base}/${entityTypeToRoute(bm.entityType)}/${bm.entityId}`}
                         {...props}
                       >
+                        <EntityThumbnail
+                          src={bm.primaryImageUrl}
+                          icon={ENTITY_ICONS[bm.entityType as EntityType] || FileText}
+                        />
                         <span class="truncate">{bm.entityName || bm.entityId}</span>
                       </a>
                     {/snippet}

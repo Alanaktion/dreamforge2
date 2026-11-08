@@ -8,6 +8,7 @@ import type { EntityType } from '$lib/types';
 import { entityTypeToRoute } from '$lib/utils/entityTypes';
 
 export interface Entity {
+  primaryImageUrl?: string | null;
   revision: string;
   id: string;
   type: EntityType;
@@ -22,6 +23,7 @@ export interface Entity {
 }
 
 export interface EntitySummary {
+  primaryImageUrl?: string | null;
   id: string;
   type: EntityType;
   name: string;

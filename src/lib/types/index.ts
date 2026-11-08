@@ -20,6 +20,7 @@ export type EntityType =
   'character' | 'organization' | 'location' | 'culture' | 'species' | 'item' | 'note';
 
 export interface EntityIndex {
+  primaryImageUrl?: string | null;
   id: string;
   projectId: string;
   type: EntityType;
@@ -103,6 +104,7 @@ export type Theme = 'light' | 'dark';
 export type BacklinkReason = 'mention' | 'participant' | 'narrator' | 'place' | 'field';
 
 export interface Backlink {
+  primaryImageUrl?: string | null;
   kind: 'entity' | 'scene';
   id: string;
   name: string;
@@ -132,6 +134,7 @@ export interface StoryStats {
 }
 
 export interface RecentItem {
+  primaryImageUrl?: string | null;
   kind: 'entity' | 'scene';
   id: string;
   name: string;

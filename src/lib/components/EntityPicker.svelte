@@ -1,4 +1,5 @@
 <script lang="ts">
+  import EntityThumbnail from '$lib/components/EntityThumbnail.svelte';
   import * as Command from '$lib/components/ui/command/index.js';
   import * as Popover from '$lib/components/ui/popover/index.js';
   import { Button } from '$lib/components/ui/button';
@@ -8,6 +9,7 @@
   import type { EntityType } from '$lib/types';
 
   interface PickerEntity {
+    primaryImageUrl?: string | null;
     id: string;
     name: string;
     type: EntityType;
@@ -90,9 +92,11 @@
 
 <div class="flex flex-wrap items-center gap-1">
   {#each value as stored (stored)}
+    {@const selected = entities.find((e) => (storeNames ? e.name === stored : e.id === stored))}
     <span
       class="inline-flex items-center gap-1 rounded-full border border-border bg-secondary px-2 py-0.5 text-xs"
     >
+      {#if selected}<EntityThumbnail src={selected.primaryImageUrl} class="size-3" />{/if}
       {labelFor(stored)}
       {#if !disabled}
         <button
@@ -133,6 +137,7 @@
                 value={entity.id}
                 onSelect={() => add(storeNames ? entity.name : entity.id)}
               >
+                <EntityThumbnail src={entity.primaryImageUrl} />
                 <span class="truncate">{entity.name}</span>
                 <span class="ml-auto text-xs text-muted-foreground">
                   {ENTITY_LABELS[entity.type]}

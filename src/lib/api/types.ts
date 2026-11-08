@@ -53,7 +53,13 @@ export interface ProjectShell {
   projectName: string;
   role: ProjectRole;
   entityCounts: Record<string, number>;
-  bookmarks: Array<{ id: string; entityId: string; entityName: string; entityType: string }>;
+  bookmarks: Array<{
+    id: string;
+    entityId: string;
+    entityName: string;
+    entityType: string;
+    primaryImageUrl?: string | null;
+  }>;
   /** Project files the server could not read, relative to the project folder. */
   storageProblems: Array<{ file: string; message: string }>;
 }

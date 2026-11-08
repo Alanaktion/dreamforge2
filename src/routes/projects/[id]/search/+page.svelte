@@ -1,7 +1,8 @@
 <script lang="ts">
+  import EntityThumbnail from '$lib/components/EntityThumbnail.svelte';
   import { page } from '$app/state';
   import { goto } from '$app/navigation';
-  import { FileText, Search as SearchIcon, BookOpenText } from '@lucide/svelte';
+  import { Search as SearchIcon, BookOpenText } from '@lucide/svelte';
   import { formatDate } from '$lib/utils';
   import { ENTITY_PLURAL } from '$lib/entityFields';
   import { entityTypeToRoute } from '$lib/utils/entityTypes';
@@ -11,6 +12,7 @@
   import { _MAX_QUERY } from './+page';
 
   interface Result {
+    primaryImageUrl?: string | null;
     kind: 'entity' | 'scene';
     id: string;
     type: string;
@@ -155,7 +157,7 @@
         {#if result.kind === 'scene'}
           <BookOpenText class="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground" />
         {:else}
-          <FileText class="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground" />
+          <EntityThumbnail src={result.primaryImageUrl} class="mt-0.5 size-5" />
         {/if}
         <div class="min-w-0 flex-1">
           <div class="flex flex-wrap items-center gap-2">

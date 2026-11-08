@@ -1,4 +1,5 @@
 <script lang="ts">
+  import EntityThumbnail from '$lib/components/EntityThumbnail.svelte';
   import { page } from '$app/state';
   import { invalidateAll } from '$app/navigation';
   import { api, ApiError } from '$lib/api';
@@ -105,11 +106,21 @@
         <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div class="space-y-1.5">
             <Label for="sourceId">Source Entity</Label>
-            <ComboboxRich bind:value={sourceId} options={entityOptions} placeholder="Select..." />
+            <ComboboxRich bind:value={sourceId} options={entityOptions} placeholder="Select...">
+              {#snippet children({ option })}
+                <EntityThumbnail src={option.entity.primaryImageUrl} />
+                <span class="truncate">{option.label}</span>
+              {/snippet}
+            </ComboboxRich>
           </div>
           <div class="space-y-1.5">
             <Label for="targetId">Target Entity</Label>
-            <ComboboxRich bind:value={targetId} options={entityOptions} placeholder="Select..." />
+            <ComboboxRich bind:value={targetId} options={entityOptions} placeholder="Select...">
+              {#snippet children({ option })}
+                <EntityThumbnail src={option.entity.primaryImageUrl} />
+                <span class="truncate">{option.label}</span>
+              {/snippet}
+            </ComboboxRich>
           </div>
         </div>
         <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -156,7 +167,8 @@
           {#if source}
             <a
               href="/projects/{page.params.id}/{entityTypeToRoute(source.type)}/{source.id}"
-              class="font-medium hover:underline">{source.name}</a
+              class="inline-flex items-center gap-2 font-medium hover:underline"
+              ><EntityThumbnail src={source.primaryImageUrl} />{source.name}</a
             >
           {:else}
             <span class="font-medium">{rel.sourceId}</span>
@@ -167,7 +179,8 @@
           {#if target}
             <a
               href="/projects/{page.params.id}/{entityTypeToRoute(target.type)}/{target.id}"
-              class="font-medium hover:underline">{target.name}</a
+              class="inline-flex items-center gap-2 font-medium hover:underline"
+              ><EntityThumbnail src={target.primaryImageUrl} />{target.name}</a
             >
           {:else}
             <span class="font-medium">{rel.targetId}</span>

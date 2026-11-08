@@ -7,6 +7,7 @@ from ..db import Db
 from ..deps import CurrentAuth
 from ..schemas import DailyGoal, Dashboard, WritingProgress
 from ..services import members, stats, writing
+from ..services.primary_images import with_primary_images
 from .entities import _access, _editor
 
 router = APIRouter(prefix="/projects/{project_id}", tags=["dashboard"])
@@ -16,6 +17,7 @@ router = APIRouter(prefix="/projects/{project_id}", tags=["dashboard"])
 def dashboard(project_id: str, auth: CurrentAuth, db: Db):
     project, _ = _access(db, project_id, auth)
     project_stats, getting_started = stats.dashboard(project)
+    with_primary_images(db, project, project_stats["recent"])
     return {
         "stats": project_stats,
         "progress": writing.get_progress(members.project_path(project), lenient=True),

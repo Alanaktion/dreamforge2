@@ -3,6 +3,7 @@ import { load as get } from '$lib/api';
 import type { PageLoad } from './$types';
 
 export interface SearchResult {
+  primaryImageUrl?: string | null;
   kind: 'entity' | 'scene';
   id: string;
   type: string;

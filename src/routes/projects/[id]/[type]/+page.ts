@@ -24,12 +24,15 @@ export const load: PageLoad = async ({ fetch, params, parent }) => {
   const customFields = fieldsFor(entityType, data.customFields);
 
   // Options for inline entityRef editing in the grid, keyed by referenced entity type.
-  const refEntities: Record<string, { id: string; name: string }[]> = {};
+  const refEntities: Record<
+    string,
+    { id: string; name: string; primaryImageUrl?: string | null }[]
+  > = {};
   for (const field of customFields) {
     if (field.type !== 'entityRef' || !field.entityType || refEntities[field.entityType]) continue;
     refEntities[field.entityType] = data.index
       .filter((e) => e.type === field.entityType)
-      .map((e) => ({ id: e.id, name: e.name }));
+      .map((e) => ({ id: e.id, name: e.name, primaryImageUrl: e.primaryImageUrl }));
   }
 
   return {

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import EntityThumbnail from '$lib/components/EntityThumbnail.svelte';
   import { page } from '$app/state';
   import {
     BookOpen,
@@ -323,7 +324,7 @@
                   <FileText class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                 {:else}
                   {@const Icon = ENTITY_ICONS[item.context as EntityType] || FileText}
-                  <Icon class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  <EntityThumbnail src={item.primaryImageUrl} icon={Icon} class="size-3.5" />
                 {/if}
                 <span class="truncate">{item.name}</span>
                 <span class="ml-auto whitespace-nowrap text-xs text-muted-foreground">

@@ -16,7 +16,13 @@
     entity: Record<string, any>;
     column: GridColumn;
     /** Entity list for the editor's @-mention autocomplete. */
-    entities?: { id: string; type: string; name: string; status?: string }[];
+    entities?: {
+      id: string;
+      type: string;
+      name: string;
+      status?: string;
+      primaryImageUrl?: string | null;
+    }[];
     onSave: (raw: string) => void;
     onClose: () => void;
   } = $props();
