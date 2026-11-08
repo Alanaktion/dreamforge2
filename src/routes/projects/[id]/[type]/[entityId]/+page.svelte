@@ -36,7 +36,7 @@
   import { Input } from '$lib/components/ui/input';
   import { Label } from '$lib/components/ui/label';
   import { Textarea } from '$lib/components/ui/textarea';
-  import { Combobox } from '$lib/components/ui/combobox';
+  import { Combobox, ComboboxRich } from '$lib/components/ui/combobox';
   import {
     Select,
     SelectContent,
@@ -388,9 +388,10 @@
   let linkableImages = $derived(
     (page.data?.projectImages ?? [])
       .filter((img: { id: string }) => !entityImages.some((linked) => linked.id === img.id))
-      .map((img: { id: string; originalName: string }) => ({
+      .map((img: { id: string; originalName: string; filename: string }) => ({
         value: img.id,
-        label: img.originalName
+        label: img.originalName,
+        url: `/api/projects/${page.params.id}/images/${encodeURIComponent(img.filename)}`
       }))
   );
 
@@ -735,12 +736,24 @@
       {/if}
       {#if canEdit && linkableImages.length > 0}
         <div class="mt-3 flex gap-2">
-          <Combobox
+          <ComboboxRich
             bind:value={selectedImageId}
             options={linkableImages}
             placeholder="Select an image..."
-            class="flex-1"
-          />
+            class="min-w-0 flex-1"
+          >
+            {#snippet children({ option })}
+              <span class="flex min-w-0 items-center gap-2">
+                <img
+                  src={option.url}
+                  alt=""
+                  loading="lazy"
+                  class="size-8 shrink-0 rounded object-cover"
+                />
+                <span class="truncate">{option.label}</span>
+              </span>
+            {/snippet}
+          </ComboboxRich>
           <Button size="sm" onclick={attachImage} disabled={!selectedImageId}>
             <Link2 class="h-3 w-3" />
             Link
